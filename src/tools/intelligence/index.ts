@@ -41,7 +41,10 @@ export type {
   ComplexityMetrics,
   QualityMetrics,
   ProjectContext,
-  ArchitectureInfo
+  ArchitectureInfo,
+  DefinitionLocation,
+  UsageLocation,
+  FindUsagesResult
 } from "./code-context.js";
 
 export type {

@@ -260,7 +260,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             default: true
           },
           includeImports: {
-            type: "boolean", 
+            type: "boolean",
             description: "Whether to extract import/export information",
             default: true
           },
@@ -326,7 +326,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
             default: true
           },
           caseSensitive: {
-            type: "boolean", 
+            type: "boolean",
             description: "Case sensitive search",
             default: false
           },
@@ -396,43 +396,56 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "code_context",
-      description: "Build intelligent code context, analyze relationships, and provide semantic understanding",
+      description: "Build intelligent code context, analyze relationships, navigate to definitions, and find symbol usages. Supports three operations: analyze_context (default), go_to_definition, and find_usages",
       parameters: {
         type: "object",
         properties: {
+          operation: {
+            type: "string",
+            enum: ["analyze_context", "go_to_definition", "find_usages"],
+            description: "Operation to perform: analyze_context (default), go_to_definition (jump to symbol definition), or find_usages (find all symbol usages)"
+          },
           filePath: {
             type: "string",
-            description: "Path to the file to analyze for context"
+            description: "Path to the file to analyze for context (required for analyze_context operation)"
+          },
+          symbolName: {
+            type: "string",
+            description: "Name of the symbol to find (required for go_to_definition and find_usages operations)"
           },
           rootPath: {
             type: "string",
-            description: "Root path of the project",
-            default: "current working directory"
+            description: "Root path of the project for relative path resolution"
+          },
+          includeDefinition: {
+            type: "boolean",
+            description: "Include definition in find_usages results",
+            default: true
           },
           includeRelationships: {
             type: "boolean",
-            description: "Include code relationships analysis",
+            description: "Include code relationships analysis (for analyze_context)",
             default: true
           },
           includeMetrics: {
             type: "boolean",
-            description: "Include code quality metrics",
+            description: "Include code quality metrics (for analyze_context)",
             default: true
           },
           includeSemantics: {
             type: "boolean",
-            description: "Include semantic analysis and patterns",
+            description: "Include semantic analysis and patterns (for analyze_context)",
             default: true
           },
           maxRelatedFiles: {
             type: "integer",
-            description: "Maximum number of related files to analyze",
+            description: "Maximum number of related files to analyze (for analyze_context)",
             default: 10,
             minimum: 1,
             maximum: 50
           }
         },
-        required: ["filePath"]
+        required: []
       }
     }
   },
@@ -530,12 +543,12 @@ const MORPH_EDIT_TOOL: GrokTool = {
 // Function to build tools array conditionally
 function buildGrokTools(): GrokTool[] {
   const tools = [...BASE_GROK_TOOLS];
-  
+
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
     tools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
   }
-  
+
   return tools;
 }
 
@@ -555,33 +568,33 @@ export function getMCPManager(): MCPManager {
 export async function initializeMCPServers(): Promise<void> {
   const manager = getMCPManager();
   const config = loadMCPConfig();
-  
+
   // Store original stderr.write
   const originalStderrWrite = process.stderr.write;
-  
+
   // Temporarily suppress stderr to hide verbose MCP connection logs
-  process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  process.stderr.write = function (chunk: any, encoding?: any, callback?: any): boolean {
     // Filter out mcp-remote verbose logs
     const chunkStr = chunk.toString();
     if (chunkStr.includes('[') && (
-        chunkStr.includes('Using existing client port') ||
-        chunkStr.includes('Connecting to remote server') ||
-        chunkStr.includes('Using transport strategy') ||
-        chunkStr.includes('Connected to remote server') ||
-        chunkStr.includes('Local STDIO server running') ||
-        chunkStr.includes('Proxy established successfully') ||
-        chunkStr.includes('Local→Remote') ||
-        chunkStr.includes('Remote→Local')
-      )) {
+      chunkStr.includes('Using existing client port') ||
+      chunkStr.includes('Connecting to remote server') ||
+      chunkStr.includes('Using transport strategy') ||
+      chunkStr.includes('Connected to remote server') ||
+      chunkStr.includes('Local STDIO server running') ||
+      chunkStr.includes('Proxy established successfully') ||
+      chunkStr.includes('Local→Remote') ||
+      chunkStr.includes('Remote→Local')
+    )) {
       // Suppress these verbose logs
       if (callback) callback();
       return true;
     }
-    
+
     // Allow other stderr output
     return originalStderrWrite.call(this, chunk, encoding, callback);
   };
-  
+
   try {
     for (const serverConfig of config.servers) {
       try {
@@ -615,10 +628,10 @@ export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   if (!mcpManager) {
     return baseTools;
   }
-  
+
   const mcpTools = mcpManager.getTools();
   const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
-  
+
   return [...baseTools, ...grokMCPTools];
 }
 

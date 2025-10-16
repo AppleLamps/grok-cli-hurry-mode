@@ -1104,43 +1104,56 @@ var BASE_GROK_TOOLS = [
     type: "function",
     function: {
       name: "code_context",
-      description: "Build intelligent code context, analyze relationships, and provide semantic understanding",
+      description: "Build intelligent code context, analyze relationships, navigate to definitions, and find symbol usages. Supports three operations: analyze_context (default), go_to_definition, and find_usages",
       parameters: {
         type: "object",
         properties: {
+          operation: {
+            type: "string",
+            enum: ["analyze_context", "go_to_definition", "find_usages"],
+            description: "Operation to perform: analyze_context (default), go_to_definition (jump to symbol definition), or find_usages (find all symbol usages)"
+          },
           filePath: {
             type: "string",
-            description: "Path to the file to analyze for context"
+            description: "Path to the file to analyze for context (required for analyze_context operation)"
+          },
+          symbolName: {
+            type: "string",
+            description: "Name of the symbol to find (required for go_to_definition and find_usages operations)"
           },
           rootPath: {
             type: "string",
-            description: "Root path of the project",
-            default: "current working directory"
+            description: "Root path of the project for relative path resolution"
+          },
+          includeDefinition: {
+            type: "boolean",
+            description: "Include definition in find_usages results",
+            default: true
           },
           includeRelationships: {
             type: "boolean",
-            description: "Include code relationships analysis",
+            description: "Include code relationships analysis (for analyze_context)",
             default: true
           },
           includeMetrics: {
             type: "boolean",
-            description: "Include code quality metrics",
+            description: "Include code quality metrics (for analyze_context)",
             default: true
           },
           includeSemantics: {
             type: "boolean",
-            description: "Include semantic analysis and patterns",
+            description: "Include semantic analysis and patterns (for analyze_context)",
             default: true
           },
           maxRelatedFiles: {
             type: "integer",
-            description: "Maximum number of related files to analyze",
+            description: "Maximum number of related files to analyze (for analyze_context)",
             default: 10,
             minimum: 1,
             maximum: 50
           }
         },
-        required: ["filePath"]
+        required: []
       }
     }
   },
@@ -6279,7 +6292,7 @@ var DependencyAnalyzerTool = class {
     }
     return [...new Set(allFiles)];
   }
-  async buildDependencyGraph(sourceFiles, rootPath, includeExternals, _maxDepth) {
+  async buildDependencyGraph(sourceFiles, rootPath, _includeExternals, _maxDepth) {
     const graph = {
       nodes: /* @__PURE__ */ new Map(),
       entryPoints: [],
@@ -6642,16 +6655,45 @@ var CodeContextTool = class {
   async execute(args) {
     try {
       const {
+        operation,
         filePath,
+        symbolName,
         rootPath = process.cwd(),
         includeRelationships = true,
         includeMetrics = true,
         includeSemantics = true,
         maxRelatedFiles = 10,
-        contextDepth = 2
+        contextDepth = 2,
+        includeDefinition = true
       } = args;
+      if (operation === "go_to_definition") {
+        if (!symbolName) {
+          throw new Error("Symbol name is required for go_to_definition operation");
+        }
+        const result = await this.goToDefinition(symbolName, rootPath);
+        if (!result) {
+          return {
+            success: false,
+            error: `Symbol '${symbolName}' not found`
+          };
+        }
+        return {
+          success: true,
+          output: JSON.stringify(result, null, 2)
+        };
+      }
+      if (operation === "find_usages") {
+        if (!symbolName) {
+          throw new Error("Symbol name is required for find_usages operation");
+        }
+        const result = await this.findUsages(symbolName, rootPath, includeDefinition);
+        return {
+          success: true,
+          output: JSON.stringify(result, null, 2)
+        };
+      }
       if (!filePath) {
-        throw new Error("File path is required");
+        throw new Error("File path is required for context analysis");
       }
       if (!await pathExists9(filePath)) {
         throw new Error(`File not found: ${filePath}`);
@@ -6682,7 +6724,6 @@ var CodeContextTool = class {
     if (!metadata) {
       throw new Error(`File not indexed: ${filePath}`);
     }
-    this.intelligenceEngine.getDependencies(filePath);
     const imports = [];
     const contextualSymbols = await this.enhanceSymbolsWithContext(symbols, filePath, rootPath);
     const dependencies = await this.analyzeDependencies(imports, filePath, rootPath);
@@ -7095,50 +7136,187 @@ var CodeContextTool = class {
     }
     return complexity;
   }
+  // ==================== Navigation Features ====================
+  /**
+   * Go to the definition of a symbol
+   * @param symbolName - Name of the symbol to find
+   * @param rootPath - Root path for relative path resolution
+   * @returns Definition location or null if not found
+   */
+  async goToDefinition(symbolName, rootPath = process.cwd()) {
+    try {
+      const refs = this.intelligenceEngine.findSymbol(symbolName);
+      if (refs.length === 0) {
+        return null;
+      }
+      const ref = refs[0];
+      const symbol = ref.symbol;
+      let preview;
+      try {
+        const content = await fs.promises.readFile(ref.filePath, "utf-8");
+        const lines = content.split("\n");
+        const line = lines[symbol.startPosition.row];
+        preview = line?.trim();
+      } catch {
+      }
+      return {
+        filePath: path7__default.relative(rootPath, ref.filePath),
+        absolutePath: ref.filePath,
+        lineNumber: symbol.startPosition.row + 1,
+        // Convert to 1-based
+        columnNumber: symbol.startPosition.column + 1,
+        // Convert to 1-based
+        symbolType: symbol.type,
+        symbolName: symbol.name,
+        preview
+      };
+    } catch (error) {
+      console.error(`Error finding definition for ${symbolName}:`, error);
+      return null;
+    }
+  }
+  /**
+   * Find all usages of a symbol
+   * @param symbolName - Name of the symbol to find usages for
+   * @param rootPath - Root path for relative path resolution
+   * @param includeDefinition - Whether to include the definition in results
+   * @returns Find usages result with all locations
+   */
+  async findUsages(symbolName, rootPath = process.cwd(), includeDefinition = true) {
+    try {
+      const crossRef = this.intelligenceEngine.findReferences(symbolName);
+      if (!crossRef) {
+        return {
+          symbolName,
+          totalUsages: 0,
+          usages: []
+        };
+      }
+      const usages = [];
+      let definition;
+      const defRefs = this.intelligenceEngine.findSymbol(symbolName);
+      if (defRefs.length > 0) {
+        const defRef = defRefs[0];
+        const symbol = defRef.symbol;
+        let context = "";
+        try {
+          const content = await fs.promises.readFile(defRef.filePath, "utf-8");
+          const lines = content.split("\n");
+          context = lines[symbol.startPosition.row]?.trim() || "";
+        } catch {
+        }
+        definition = {
+          filePath: path7__default.relative(rootPath, defRef.filePath),
+          absolutePath: defRef.filePath,
+          lineNumber: symbol.startPosition.row + 1,
+          columnNumber: symbol.startPosition.column + 1,
+          symbolType: symbol.type,
+          symbolName: symbol.name,
+          preview: context
+        };
+        if (includeDefinition) {
+          usages.push({
+            filePath: path7__default.relative(rootPath, defRef.filePath),
+            absolutePath: defRef.filePath,
+            lineNumber: symbol.startPosition.row + 1,
+            columnNumber: symbol.startPosition.column + 1,
+            usageType: "definition",
+            context
+          });
+        }
+      }
+      for (const ref of crossRef.references) {
+        let context = "";
+        try {
+          const content = await fs.promises.readFile(ref.file, "utf-8");
+          const lines = content.split("\n");
+          context = lines[ref.line]?.trim() || "";
+        } catch {
+        }
+        usages.push({
+          filePath: path7__default.relative(rootPath, ref.file),
+          absolutePath: ref.file,
+          lineNumber: ref.line + 1,
+          // Convert to 1-based
+          columnNumber: ref.column + 1,
+          // Convert to 1-based
+          usageType: ref.type,
+          context
+        });
+      }
+      return {
+        symbolName,
+        totalUsages: usages.length,
+        definition,
+        usages
+      };
+    } catch (error) {
+      console.error(`Error finding usages for ${symbolName}:`, error);
+      return {
+        symbolName,
+        totalUsages: 0,
+        usages: []
+      };
+    }
+  }
   getSchema() {
     return {
       type: "object",
       properties: {
+        operation: {
+          type: "string",
+          enum: ["analyze_context", "go_to_definition", "find_usages"],
+          description: "Operation to perform: analyze_context (default), go_to_definition, or find_usages",
+          default: "analyze_context"
+        },
         filePath: {
           type: "string",
-          description: "Path to the file to analyze for context"
+          description: "Path to the file to analyze for context (required for analyze_context operation)"
+        },
+        symbolName: {
+          type: "string",
+          description: "Name of the symbol (required for go_to_definition and find_usages operations)"
         },
         rootPath: {
           type: "string",
-          description: "Root path of the project",
+          description: "Root path of the project for relative path resolution",
           default: "current working directory"
+        },
+        includeDefinition: {
+          type: "boolean",
+          description: "Include definition in find_usages results",
+          default: true
         },
         includeRelationships: {
           type: "boolean",
-          description: "Include code relationships analysis",
+          description: "Include code relationships analysis (for analyze_context)",
           default: true
         },
         includeMetrics: {
           type: "boolean",
-          description: "Include code quality metrics",
+          description: "Include code quality metrics (for analyze_context)",
           default: true
         },
         includeSemantics: {
           type: "boolean",
-          description: "Include semantic analysis and patterns",
+          description: "Include semantic analysis and patterns (for analyze_context)",
           default: true
         },
         maxRelatedFiles: {
           type: "integer",
-          description: "Maximum number of related files to analyze",
+          description: "Maximum number of related files to analyze (for analyze_context)",
           default: 10,
           minimum: 1,
           maximum: 50
         },
         contextDepth: {
           type: "integer",
-          description: "Depth of context analysis",
+          description: "Depth of context analysis (for analyze_context)",
           default: 2,
           minimum: 1,
           maximum: 5
         }
-      },
-      required: ["filePath"]
+      }
     };
   }
 };

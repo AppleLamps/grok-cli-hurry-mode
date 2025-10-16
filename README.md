@@ -1,10 +1,12 @@
-## 1.0.44 – Stability Release
+## 1.0.49 – Task Planning Framework Release
 
-This release restores the proven 1.0.31 baseline. Auto-version test.
-- Fixes all Read/Update tool reliability issues
-- Ensures consistent FS imports (`node:` namespace)
-- Adds proper Node shebang for global installs
-- Temporarily removes experimental features (e.g. compress)
+This release introduces intelligent task orchestration with automatic planning and execution.
+- **🎯 Task Planning Framework**: Multi-step task decomposition with automatic execution
+- **🛡️ Risk Assessment**: Identifies high-risk operations with user confirmation
+- **🔄 Safe Rollback**: Automatic rollback on failure with file snapshots
+- **📊 Progress Tracking**: Real-time progress updates during plan execution
+- **✅ Comprehensive Testing**: 19 integration tests ensuring reliability
+- **🧪 Vitest Integration**: Modern testing framework with watch mode and UI
 
 
 # Grok CLI
@@ -59,14 +61,24 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 
 ## 🆕 What's New in v1.0+
 
-### 🧠 **P2: Code Intelligence Tools** (Latest)
+### 🎯 **Task Planning Framework** (Latest - v1.0.49+)
+- **🧠 Intelligent Task Orchestration**: Automatically breaks down complex tasks into executable steps
+- **⚡ Automatic Execution**: Create and execute multi-step plans with a single command
+- **🛡️ Risk Assessment**: Identifies high-risk operations and requests user confirmation
+- **🔄 Safe Rollback**: Automatic rollback on failure with file snapshots
+- **📊 Progress Tracking**: Real-time progress events during plan execution
+- **✅ Comprehensive Testing**: 19 integration tests ensuring reliability
+
+**Example**: Ask "Refactor authentication module to use dependency injection" and watch Grok automatically plan, validate, and execute the entire refactoring with safety checks!
+
+### 🧠 **P2: Code Intelligence Tools**
 - **🔍 AST Parser**: Language-specific syntax tree analysis for TypeScript, JavaScript, Python
 - **🔎 Symbol Search**: Fuzzy search across codebases with cross-references and usage analysis
 - **📊 Dependency Analyzer**: Circular dependency detection and dependency graph generation
 - **🎯 Code Context**: Semantic analysis with quality metrics and design pattern detection
 - **🔧 Refactoring Assistant**: Safe rename, extract, inline operations with preview and rollback
 
-### 🚀 **P1: Enhanced File Operations** 
+### 🚀 **P1: Enhanced File Operations**
 - **⚡ Multi-File Editor**: Atomic operations with transaction support and rollback
 - **🔍 Advanced Search Tool**: Regex patterns with bulk replace and context-aware results
 - **🌳 File Tree Operations**: Visual trees, bulk operations, and intelligent file organization
@@ -75,7 +87,7 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 
 **🎯 Result**: **Claude Code-level capabilities** in your terminal!
 
-### 🛠️ **P3: Reliability & Workflow Enhancements** (Latest)
+### 🛠️ **P3: Reliability & Workflow Enhancements**
 - **🤖 .agent System**: AI-powered task management and documentation system for efficient workflows
 - **🔧 Healer Script**: Automated issue detection and resolution for tool reliability
 - **⚡ FsPort Abstraction**: Improved file system operations with Node built-ins externalization
@@ -84,6 +96,21 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 
 ## ✨ Features
 
+### 🎯 **Intelligent Task Planning & Orchestration**
+- **🧠 Multi-Step Task Planning**: Automatically decomposes complex tasks into executable steps with dependency ordering
+- **⚡ Automatic Execution**: Create, validate, and execute plans with a single command
+- **🛡️ Risk Assessment**: Evaluates operation risks (low/medium/high/critical) before execution
+- **✅ User Confirmation**: Prompts for approval on high-risk operations with detailed plan previews
+- **🔄 Safe Rollback**: Automatic rollback on failure with file snapshots and state restoration
+- **📊 Real-Time Progress**: Live progress tracking with step completion, time estimates, and phase updates
+- **🧪 Comprehensive Testing**: 19 integration tests covering planning, validation, execution, and rollback
+
+**Example Use Cases**:
+- "Refactor authentication module to use dependency injection"
+- "Move all utility functions to a shared folder"
+- "Extract common validation logic into a separate function"
+- "Reorganize project structure following best practices"
+
 ### 🧠 **Claude Code-Level Intelligence**
 - **🔍 AST Code Analysis**: Parse TypeScript, JavaScript, Python files to extract symbols, imports, and structure
 - **🔎 Symbol Search**: Fuzzy search for functions, classes, variables across entire codebases
@@ -91,7 +118,7 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 - **🎯 Code Context**: Intelligent relationship mapping with semantic analysis and quality metrics
 - **🔧 Safe Refactoring**: Rename, extract, inline operations with preview and rollback support
 
-### 🚀 **Advanced File Operations** 
+### 🚀 **Advanced File Operations**
 - **⚡ Multi-File Editing**: Atomic operations across multiple files with transaction support
 - **🔍 Advanced Search**: Regex patterns with bulk replace and context-aware results
 - **🌳 File Tree Operations**: Visual directory trees, bulk operations, and file organization
@@ -449,6 +476,134 @@ Follow the existing code style and patterns in this project.
 
 Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
 
+## Task Planning Framework
+
+Grok CLI includes an intelligent task planning system that can automatically break down complex tasks into executable steps, assess risks, and execute them safely with automatic rollback on failure.
+
+### How It Works
+
+1. **Task Analysis**: Analyzes your request to understand intent (refactor, move, extract, etc.), scope, and complexity
+2. **Plan Generation**: Creates a detailed execution plan with steps, dependencies, and risk assessment
+3. **Validation**: Validates the plan for circular dependencies, invalid tools, and potential issues
+4. **Risk Assessment**: Evaluates each step and overall plan risk (low/medium/high/critical)
+5. **User Confirmation**: For high-risk operations, displays a detailed plan preview and requests approval
+6. **Safe Execution**: Executes steps in dependency order with automatic rollback on failure
+7. **Progress Tracking**: Provides real-time updates on execution progress
+
+### Usage Examples
+
+**Simple refactoring:**
+```bash
+grok --prompt "Refactor the authentication module to use dependency injection"
+```
+
+**Moving files:**
+```bash
+grok --prompt "Move all utility functions to a shared/utils folder"
+```
+
+**Extracting code:**
+```bash
+grok --prompt "Extract common validation logic into a separate validateUser function"
+```
+
+**Complex reorganization:**
+```bash
+grok --prompt "Reorganize the project structure to follow feature-based architecture"
+```
+
+### What Happens Behind the Scenes
+
+When you request a complex task, Grok will:
+
+1. **Analyze** the request and determine the best approach
+2. **Create a plan** with specific steps like:
+   - Analyze code structure and dependencies
+   - Identify files to modify
+   - Create backup points
+   - Execute refactoring operations
+   - Validate changes
+3. **Show you the plan** if it's high-risk, including:
+   - Total steps and estimated duration
+   - Files that will be affected
+   - Risk level and warnings
+   - Suggested mitigations
+4. **Ask for confirmation** before proceeding
+5. **Execute the plan** with real-time progress updates
+6. **Rollback automatically** if any step fails
+
+### Plan Preview Example
+
+```
+═══════════════════════════════════════════════════════════
+                      TASK PLAN PREVIEW
+═══════════════════════════════════════════════════════════
+
+Task: Refactor authentication module to use dependency injection
+
+Total Steps: 8
+Estimated Duration: 45 seconds
+Risk Level: HIGH ⚠️
+
+Steps:
+  1. [ANALYSIS] Analyze authentication module structure
+  2. [ANALYSIS] Identify dependencies and injection points
+  3. [EDIT] Create dependency injection container
+  4. [EDIT] Refactor AuthService to accept dependencies
+  5. [EDIT] Update authentication middleware
+  6. [EDIT] Modify service instantiation
+  7. [TEST] Validate refactored code
+  8. [ANALYSIS] Verify no circular dependencies
+
+Files Affected: 12 files
+Tools Used: code_context, dependency_analyzer, refactoring_assistant, multi_file_editor
+
+Validation: ✅ VALID
+Warnings:
+  - High-risk operation affecting core authentication
+  - Recommend creating backup before proceeding
+  - Test coverage should be verified after changes
+
+Suggestions:
+  - Run tests after refactoring
+  - Review dependency injection patterns
+  - Consider gradual migration approach
+
+═══════════════════════════════════════════════════════════
+Proceed with execution? (y/n)
+```
+
+### Advanced Features
+
+- **Automatic Rollback**: If any step fails, all changes are automatically reverted
+- **Progress Events**: Real-time updates on current step, completion percentage, and time remaining
+- **Dependency Ordering**: Steps execute in the correct order based on dependencies
+- **Risk Mitigation**: Suggestions for reducing risk and improving success rate
+- **Transaction Support**: Multi-file operations are atomic - all succeed or all rollback
+
+### Testing
+
+The Task Planning Framework includes comprehensive integration tests:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with UI
+npm run test:ui
+```
+
+All 19 integration tests cover:
+- End-to-end plan creation and execution
+- Plan validation and circular dependency detection
+- Rollback on failure scenarios
+- Risk assessment accuracy
+- Progress event emission
+- Error handling
+
 ## Morph Fast Apply (Optional)
 
 Grok CLI supports Morph's Fast Apply model for high-speed code editing at **4,500+ tokens/sec with 98% accuracy**. This is an optional feature that provides lightning-fast file editing capabilities.
@@ -546,6 +701,15 @@ bun run dev
 
 # Build project
 npm run build
+
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with UI
+npm run test:ui
 
 # Run linter
 bun run lint

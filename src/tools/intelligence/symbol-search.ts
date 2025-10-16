@@ -1,5 +1,5 @@
 import { ToolResult } from "../../types/index.js";
-import { ASTParserTool, SymbolInfo } from "./ast-parser.js";
+import { SymbolInfo } from "./types.js";
 import { CodeIntelligenceEngine } from "./engine.js";
 import Fuse from "fuse.js";
 import * as ops from "fs";
@@ -42,14 +42,12 @@ export class SymbolSearchTool {
   description = "Search for symbols (functions, classes, variables) across the codebase with fuzzy matching and cross-references";
 
   private intelligenceEngine: CodeIntelligenceEngine;
-  private astParser: ASTParserTool;
   private symbolIndex: Map<string, SymbolReference[]> = new Map();
   private lastIndexTime: number = 0;
   private indexCacheDuration = 5 * 60 * 1000; // 5 minutes
 
   constructor(intelligenceEngine: CodeIntelligenceEngine) {
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
   }
 
   async execute(args: any): Promise<ToolResult> {
@@ -117,7 +115,7 @@ export class SymbolSearchTool {
     symbolTypes: string[]
   ): Promise<void> {
     this.symbolIndex.clear();
-    
+
     // Find all source files
     const allFiles: string[] = [];
     for (const pattern of filePatterns) {
@@ -132,37 +130,29 @@ export class SymbolSearchTool {
     // Parse each file and extract symbols
     for (const filePath of allFiles) {
       try {
-        const parseResult = await this.astParser.execute({
-          filePath,
-          includeSymbols: true,
-          includeImports: false,
-          includeTree: false,
-          symbolTypes
-        });
+        // Use the intelligence engine to get symbols
+        const symbols = this.intelligenceEngine.getFileSymbols(filePath);
 
-        if (!parseResult.success || !parseResult.output) continue;
-        const parsed = JSON.parse(parseResult.output);
-        if (parsed.success && parsed.result.symbols) {
-          const symbols = parsed.result.symbols as SymbolInfo[];
-          
-          for (const symbol of symbols) {
-            const symbolRef: SymbolReference = {
-              symbol,
-              filePath,
-              usages: []
-            };
+        // Filter by symbol types if needed
+        const filteredSymbols = symbols.filter(symbol => symbolTypes.includes(symbol.type));
 
-            // Index by symbol name
-            const existing = this.symbolIndex.get(symbol.name) || [];
-            existing.push(symbolRef);
-            this.symbolIndex.set(symbol.name, existing);
+        for (const symbol of filteredSymbols) {
+          const symbolRef: SymbolReference = {
+            symbol,
+            filePath,
+            usages: []
+          };
 
-            // Index by type for broader searches
-            const typeKey = `type:${symbol.type}`;
-            const typeExisting = this.symbolIndex.get(typeKey) || [];
-            typeExisting.push(symbolRef);
-            this.symbolIndex.set(typeKey, typeExisting);
-          }
+          // Index by symbol name
+          const existing = this.symbolIndex.get(symbol.name) || [];
+          existing.push(symbolRef);
+          this.symbolIndex.set(symbol.name, existing);
+
+          // Index by type for broader searches
+          const typeKey = `type:${symbol.type}`;
+          const typeExisting = this.symbolIndex.get(typeKey) || [];
+          typeExisting.push(symbolRef);
+          this.symbolIndex.set(typeKey, typeExisting);
         }
       } catch (error) {
         // Skip files that can't be parsed
@@ -182,14 +172,14 @@ export class SymbolSearchTool {
     includeUsages: boolean
   ): Promise<SearchResult> {
     const allSymbols: SymbolReference[] = [];
-    
+
     // Collect all indexed symbols
     for (const refs of this.symbolIndex.values()) {
       allSymbols.push(...refs);
     }
 
     // Filter by symbol types
-    const filteredSymbols = allSymbols.filter(ref => 
+    const filteredSymbols = allSymbols.filter(ref =>
       symbolTypes.includes(ref.symbol.type)
     );
 
@@ -244,17 +234,17 @@ export class SymbolSearchTool {
 
   private async findSymbolUsages(symbolRef: SymbolReference): Promise<SymbolUsage[]> {
     const usages: SymbolUsage[] = [];
-    
+
     try {
       const content = await ops.promises.readFile(symbolRef.filePath, 'utf-8');
       const lines = content.split('\n');
-      
+
       // Simple text-based usage finding
       // TODO: Use AST analysis for more accurate results
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const symbolName = symbolRef.symbol.name;
-        
+
         let index = 0;
         while ((index = line.indexOf(symbolName, index)) !== -1) {
           // Skip if this is the definition itself
@@ -265,7 +255,7 @@ export class SymbolSearchTool {
 
           // Determine usage type based on context
           let usageType: SymbolUsage['type'] = 'reference';
-          
+
           if (line.includes('import') && line.includes(symbolName)) {
             usageType = 'import';
           } else if (line.includes('export') && line.includes(symbolName)) {
@@ -298,7 +288,7 @@ export class SymbolSearchTool {
 
   async findCrossReferences(symbolName: string, searchPath: string = process.cwd()): Promise<CrossReference[]> {
     const crossRefs: CrossReference[] = [];
-    
+
     // Find all occurrences of the symbol
     const searchResult = await this.execute({
       query: symbolName,
@@ -312,7 +302,7 @@ export class SymbolSearchTool {
     const parsed = JSON.parse(searchResult.output);
     if (parsed.success && parsed.result.symbols) {
       const symbols = parsed.result.symbols as SymbolReference[];
-      
+
       for (const symbolRef of symbols) {
         if (symbolRef.symbol.name === symbolName) {
           const definitionFile = symbolRef.filePath;
@@ -344,7 +334,7 @@ export class SymbolSearchTool {
 
   async findSimilarSymbols(symbolName: string, threshold: number = 0.6): Promise<SymbolReference[]> {
     const allSymbols: SymbolReference[] = [];
-    
+
     for (const refs of this.symbolIndex.values()) {
       allSymbols.push(...refs);
     }
@@ -423,7 +413,7 @@ export class SymbolSearchTool {
           default: true
         },
         caseSensitive: {
-          type: "boolean", 
+          type: "boolean",
           description: "Case sensitive search",
           default: false
         },

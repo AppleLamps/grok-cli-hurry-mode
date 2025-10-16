@@ -5878,165 +5878,6 @@ ${errors.join("\n")}`;
     };
   }
 };
-var pathExists8 = async (filePath) => {
-  try {
-    await fs.promises.access(filePath, fs.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-var ASTParserTool = class {
-  constructor(engine) {
-    this.name = "ast_parser";
-    this.description = "Parse source code files to extract AST, symbols, imports, exports, and structural information";
-    this.engine = null;
-    this.engine = engine || null;
-  }
-  detectLanguage(filePath) {
-    const ext = path7__default.extname(filePath).slice(1).toLowerCase();
-    switch (ext) {
-      case "js":
-      case "mjs":
-      case "cjs":
-        return "javascript";
-      case "jsx":
-        return "jsx";
-      case "ts":
-        return "typescript";
-      case "tsx":
-        return "tsx";
-      case "py":
-      case "pyw":
-        return "python";
-      default:
-        return "javascript";
-    }
-  }
-  async execute(args) {
-    try {
-      const {
-        filePath,
-        includeSymbols = true,
-        includeImports = true,
-        includeTree = false,
-        symbolTypes = ["function", "class", "variable", "interface", "enum", "type"],
-        scope = "all"
-        // 'all', 'global', 'local'
-      } = args;
-      if (!filePath) {
-        throw new Error("File path is required");
-      }
-      if (!await pathExists8(filePath)) {
-        throw new Error(`File not found: ${filePath}`);
-      }
-      if (this.engine && this.engine.isReady()) {
-        const metadata = this.engine.getFileMetadata(filePath);
-        const ast = includeTree ? this.engine.getAST(filePath) : null;
-        const fileSymbols = includeSymbols ? this.engine.getFileSymbols(filePath) : [];
-        let symbols = fileSymbols;
-        if (includeSymbols) {
-          symbols = symbols.filter(
-            (symbol) => symbolTypes.includes(symbol.type) && (scope === "all" || this.matchesScope(symbol, scope))
-          );
-        }
-        const imports = [];
-        const exports = [];
-        return {
-          success: true,
-          output: JSON.stringify({
-            filePath: metadata?.filePath || path7__default.basename(filePath),
-            language: metadata?.language || "unknown",
-            symbolCount: symbols.length,
-            importCount: imports.length,
-            exportCount: exports.length,
-            errorCount: 0,
-            ...includeSymbols && { symbols },
-            ...includeImports && { imports, exports },
-            ...includeTree && ast && { tree: ast },
-            cached: true
-            // Indicate this came from engine cache
-          }, null, 2)
-        };
-      }
-      const content = await fs.promises.readFile(filePath, "utf-8");
-      const language = this.detectLanguage(filePath);
-      return {
-        success: true,
-        output: JSON.stringify({
-          filePath: path7__default.basename(filePath),
-          language,
-          symbolCount: 0,
-          importCount: 0,
-          exportCount: 0,
-          errorCount: 0,
-          symbols: [],
-          imports: [],
-          exports: [],
-          cached: false,
-          note: "Engine not initialized - minimal parsing performed"
-        }, null, 2)
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-  matchesScope(symbol, scope) {
-    switch (scope) {
-      case "global":
-        return symbol.scope === "global";
-      case "local":
-        return symbol.scope !== "global";
-      default:
-        return true;
-    }
-  }
-  getSchema() {
-    return {
-      type: "object",
-      properties: {
-        filePath: {
-          type: "string",
-          description: "Path to the source code file to parse"
-        },
-        includeSymbols: {
-          type: "boolean",
-          description: "Whether to extract symbols (functions, classes, variables, etc.)",
-          default: true
-        },
-        includeImports: {
-          type: "boolean",
-          description: "Whether to extract import/export information",
-          default: true
-        },
-        includeTree: {
-          type: "boolean",
-          description: "Whether to include the full AST tree in response",
-          default: false
-        },
-        symbolTypes: {
-          type: "array",
-          items: {
-            type: "string",
-            enum: ["function", "class", "variable", "interface", "enum", "type", "method", "property"]
-          },
-          description: "Types of symbols to extract",
-          default: ["function", "class", "variable", "interface", "enum", "type"]
-        },
-        scope: {
-          type: "string",
-          enum: ["all", "global", "local"],
-          description: "Scope of symbols to extract",
-          default: "all"
-        }
-      },
-      required: ["filePath"]
-    };
-  }
-};
 var SymbolSearchTool = class {
   // 5 minutes
   constructor(intelligenceEngine) {
@@ -6046,7 +5887,6 @@ var SymbolSearchTool = class {
     this.lastIndexTime = 0;
     this.indexCacheDuration = 5 * 60 * 1e3;
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
   }
   async execute(args) {
     try {
@@ -6108,31 +5948,21 @@ var SymbolSearchTool = class {
     }
     for (const filePath of allFiles) {
       try {
-        const parseResult = await this.astParser.execute({
-          filePath,
-          includeSymbols: true,
-          includeImports: false,
-          includeTree: false,
-          symbolTypes
-        });
-        if (!parseResult.success || !parseResult.output) continue;
-        const parsed = JSON.parse(parseResult.output);
-        if (parsed.success && parsed.result.symbols) {
-          const symbols = parsed.result.symbols;
-          for (const symbol of symbols) {
-            const symbolRef = {
-              symbol,
-              filePath,
-              usages: []
-            };
-            const existing = this.symbolIndex.get(symbol.name) || [];
-            existing.push(symbolRef);
-            this.symbolIndex.set(symbol.name, existing);
-            const typeKey = `type:${symbol.type}`;
-            const typeExisting = this.symbolIndex.get(typeKey) || [];
-            typeExisting.push(symbolRef);
-            this.symbolIndex.set(typeKey, typeExisting);
-          }
+        const symbols = this.intelligenceEngine.getFileSymbols(filePath);
+        const filteredSymbols = symbols.filter((symbol) => symbolTypes.includes(symbol.type));
+        for (const symbol of filteredSymbols) {
+          const symbolRef = {
+            symbol,
+            filePath,
+            usages: []
+          };
+          const existing = this.symbolIndex.get(symbol.name) || [];
+          existing.push(symbolRef);
+          this.symbolIndex.set(symbol.name, existing);
+          const typeKey = `type:${symbol.type}`;
+          const typeExisting = this.symbolIndex.get(typeKey) || [];
+          typeExisting.push(symbolRef);
+          this.symbolIndex.set(typeKey, typeExisting);
         }
       } catch (error) {
         console.warn(`Failed to parse ${filePath}: ${error}`);
@@ -6219,7 +6049,7 @@ var SymbolSearchTool = class {
           index += symbolName.length;
         }
       }
-    } catch (error) {
+    } catch {
     }
     return usages;
   }
@@ -6363,7 +6193,7 @@ var SymbolSearchTool = class {
     };
   }
 };
-var pathExists9 = async (filePath) => {
+var pathExists8 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
     return true;
@@ -6376,7 +6206,6 @@ var DependencyAnalyzerTool = class {
     this.name = "dependency_analyzer";
     this.description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
   }
   async execute(args) {
     try {
@@ -6391,7 +6220,7 @@ var DependencyAnalyzerTool = class {
         entryPoints = [],
         maxDepth = 50
       } = args;
-      if (!await pathExists9(rootPath)) {
+      if (!await pathExists8(rootPath)) {
         throw new Error(`Root path does not exist: ${rootPath}`);
       }
       const sourceFiles = await this.findSourceFiles(rootPath, filePatterns, excludePatterns);
@@ -6450,7 +6279,7 @@ var DependencyAnalyzerTool = class {
     }
     return [...new Set(allFiles)];
   }
-  async buildDependencyGraph(sourceFiles, rootPath, includeExternals, maxDepth) {
+  async buildDependencyGraph(sourceFiles, rootPath, includeExternals, _maxDepth) {
     const graph = {
       nodes: /* @__PURE__ */ new Map(),
       entryPoints: [],
@@ -6468,36 +6297,22 @@ var DependencyAnalyzerTool = class {
     };
     for (const filePath of sourceFiles) {
       try {
-        const parseResult = await this.astParser.execute({
-          filePath,
-          includeSymbols: false,
-          includeImports: true,
-          includeTree: false
-        });
-        if (!parseResult.success || !parseResult.output) continue;
-        const parsed = JSON.parse(parseResult.output);
-        if (parsed.success && parsed.result) {
-          const imports = parsed.result.imports || [];
-          const exports = parsed.result.exports || [];
-          const dependencies = await this.resolveImportPaths(
-            imports,
-            filePath,
-            rootPath,
-            includeExternals
-          );
-          const node = {
-            filePath: path7__default.relative(rootPath, filePath),
-            absolutePath: filePath,
-            imports,
-            exports,
-            dependencies,
-            dependents: [],
-            isEntryPoint: false,
-            isLeaf: dependencies.length === 0,
-            circularDependencies: []
-          };
-          graph.nodes.set(filePath, node);
-        }
+        const deps = this.intelligenceEngine.getDependencies(filePath);
+        const dependencies = Array.from(deps);
+        const imports = [];
+        const exports = [];
+        const node = {
+          filePath: path7__default.relative(rootPath, filePath),
+          absolutePath: filePath,
+          imports,
+          exports,
+          dependencies,
+          dependents: [],
+          isEntryPoint: false,
+          isLeaf: dependencies.length === 0,
+          circularDependencies: []
+        };
+        graph.nodes.set(filePath, node);
       } catch (error) {
         console.warn(`Failed to parse ${filePath}: ${error}`);
       }
@@ -6537,7 +6352,7 @@ var DependencyAnalyzerTool = class {
       } else {
         continue;
       }
-      if (resolvedPath && await pathExists9(resolvedPath)) {
+      if (resolvedPath && await pathExists8(resolvedPath)) {
         dependencies.push(resolvedPath);
       }
     }
@@ -6548,13 +6363,13 @@ var DependencyAnalyzerTool = class {
     const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
     for (const ext of extensions) {
       const fullPath = basePath + ext;
-      if (await pathExists9(fullPath)) {
+      if (await pathExists8(fullPath)) {
         return fullPath;
       }
     }
     for (const ext of extensions) {
       const indexPath = path7__default.join(basePath, `index${ext}`);
-      if (await pathExists9(indexPath)) {
+      if (await pathExists8(indexPath)) {
         return indexPath;
       }
     }
@@ -6568,10 +6383,10 @@ var DependencyAnalyzerTool = class {
     const circularDeps = [];
     const visited = /* @__PURE__ */ new Set();
     const visiting = /* @__PURE__ */ new Set();
-    const dfs = (filePath, path26) => {
+    const dfs = (filePath, path25) => {
       if (visiting.has(filePath)) {
-        const cycleStart = path26.indexOf(filePath);
-        const cycle = path26.slice(cycleStart).concat([filePath]);
+        const cycleStart = path25.indexOf(filePath);
+        const cycle = path25.slice(cycleStart).concat([filePath]);
         circularDeps.push({
           cycle: cycle.map((fp) => graph.nodes.get(fp)?.filePath || fp),
           severity: cycle.length <= 2 ? "error" : "warning",
@@ -6587,7 +6402,7 @@ var DependencyAnalyzerTool = class {
       if (node) {
         for (const dependency of node.dependencies) {
           if (graph.nodes.has(dependency)) {
-            dfs(dependency, [...path26, filePath]);
+            dfs(dependency, [...path25, filePath]);
           }
         }
       }
@@ -6726,41 +6541,15 @@ var DependencyAnalyzerTool = class {
   }
   // Additional utility methods
   async analyzeModule(filePath) {
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: false,
-      includeImports: true,
-      includeTree: false
-    });
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error(`Failed to parse module: ${filePath}`);
-    }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error(`Failed to parse module: ${filePath}`);
-    }
-    const imports = parsed.result.imports || [];
+    const deps = this.intelligenceEngine.getDependencies(filePath);
     const rootPath = process.cwd();
     const externalDependencies = [];
     const internalDependencies = [];
-    const duplicateImports = [];
-    const seenSources = /* @__PURE__ */ new Set();
-    for (const importInfo of imports) {
-      if (seenSources.has(importInfo.source)) {
-        duplicateImports.push(importInfo.source);
+    for (const dep of deps) {
+      if (dep.startsWith(".") || dep.startsWith("/") || path7__default.isAbsolute(dep)) {
+        internalDependencies.push(path7__default.relative(rootPath, dep));
       } else {
-        seenSources.add(importInfo.source);
-      }
-      if (importInfo.source.startsWith(".") || importInfo.source.startsWith("/")) {
-        const resolved = await this.resolveRelativeImport(
-          importInfo.source,
-          path7__default.dirname(filePath)
-        );
-        if (resolved) {
-          internalDependencies.push(resolved);
-        }
-      } else {
-        externalDependencies.push(importInfo.source);
+        externalDependencies.push(dep);
       }
     }
     return {
@@ -6773,7 +6562,7 @@ var DependencyAnalyzerTool = class {
       // TODO: Implement with symbol usage analysis
       missingDependencies: [],
       // TODO: Implement with file existence checks
-      duplicateImports
+      duplicateImports: []
     };
   }
   getSchema() {
@@ -6834,7 +6623,7 @@ var DependencyAnalyzerTool = class {
     };
   }
 };
-var pathExists10 = async (filePath) => {
+var pathExists9 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
     return true;
@@ -6847,7 +6636,6 @@ var CodeContextTool = class {
     this.name = "code_context";
     this.description = "Build intelligent code context, analyze relationships, and provide semantic understanding";
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
     this.dependencyAnalyzer = new DependencyAnalyzerTool(intelligenceEngine);
   }
@@ -6865,7 +6653,7 @@ var CodeContextTool = class {
       if (!filePath) {
         throw new Error("File path is required");
       }
-      if (!await pathExists10(filePath)) {
+      if (!await pathExists9(filePath)) {
         throw new Error(`File not found: ${filePath}`);
       }
       const context = await this.buildCodeContext(
@@ -6888,22 +6676,14 @@ var CodeContextTool = class {
       };
     }
   }
-  async buildCodeContext(filePath, rootPath, includeRelationships, includeMetrics, includeSemantics, maxRelatedFiles, contextDepth) {
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: true,
-      includeImports: true,
-      includeTree: false
-    });
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error(`Failed to parse file: ${filePath}`);
+  async buildCodeContext(filePath, rootPath, includeRelationships, includeMetrics, includeSemantics, maxRelatedFiles, _contextDepth) {
+    const symbols = this.intelligenceEngine.getFileSymbols(filePath);
+    const metadata = this.intelligenceEngine.getFileMetadata(filePath);
+    if (!metadata) {
+      throw new Error(`File not indexed: ${filePath}`);
     }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error(`Failed to parse file: ${filePath}`);
-    }
-    const symbols = parsed.result.symbols || [];
-    const imports = parsed.result.imports || [];
+    this.intelligenceEngine.getDependencies(filePath);
+    const imports = [];
     const contextualSymbols = await this.enhanceSymbolsWithContext(symbols, filePath, rootPath);
     const dependencies = await this.analyzeDependencies(imports, filePath, rootPath);
     let relationships = [];
@@ -6965,7 +6745,7 @@ var CodeContextTool = class {
     }
     return enhanced;
   }
-  async findRelatedSymbols(symbol, allSymbols, filePath, rootPath) {
+  async findRelatedSymbols(symbol, allSymbols, filePath, _rootPath) {
     const related = [];
     const sameScope = allSymbols.filter(
       (s) => s !== symbol && s.scope === symbol.scope
@@ -6975,7 +6755,7 @@ var CodeContextTool = class {
       const searchResult = await this.symbolSearch.findSimilarSymbols(symbol.name, 0.7);
       const similarNames = searchResult.filter((ref) => ref.filePath !== filePath).slice(0, 5).map((ref) => ref.symbol.name);
       related.push(...similarNames);
-    } catch (error) {
+    } catch {
     }
     return [...new Set(related)];
   }
@@ -7013,7 +6793,7 @@ var CodeContextTool = class {
           contexts: ["return"]
         });
       }
-    } catch (error) {
+    } catch {
     }
     return patterns;
   }
@@ -7075,7 +6855,7 @@ var CodeContextTool = class {
     }
     return void 0;
   }
-  async analyzeDependencies(imports, filePath, rootPath) {
+  async analyzeDependencies(imports, _filePath, _rootPath) {
     const dependencies = [];
     for (const importInfo of imports) {
       const type = this.categorizeImport(importInfo.source);
@@ -7102,7 +6882,7 @@ var CodeContextTool = class {
     }
     return "external";
   }
-  async buildCodeRelationships(filePath, symbols, dependencies, rootPath, maxRelatedFiles) {
+  async buildCodeRelationships(filePath, symbols, dependencies, _rootPath, _maxRelatedFiles) {
     const relationships = [];
     for (const symbol of symbols) {
       for (const relatedName of symbol.context.relatedSymbols) {
@@ -7149,7 +6929,7 @@ var CodeContextTool = class {
       quality
     };
   }
-  inferPurpose(fileName, symbols, content) {
+  inferPurpose(fileName, symbols, _content) {
     const name = fileName.toLowerCase();
     if (name.includes("test") || name.includes("spec")) return "testing";
     if (name.includes("config")) return "configuration";
@@ -7167,7 +6947,7 @@ var CodeContextTool = class {
     if (functionCount > 0) return "functional";
     return "unknown";
   }
-  extractDomain(filePath, symbols, dependencies) {
+  extractDomain(filePath, _symbols, dependencies) {
     const domains = [];
     const pathParts = filePath.split(path7__default.sep);
     for (const part of pathParts) {
@@ -7263,7 +7043,7 @@ var CodeContextTool = class {
       reusability: Math.max(0, Math.min(1, reusability))
     };
   }
-  async calculateCodeMetrics(filePath, symbols) {
+  async calculateCodeMetrics(filePath, _symbols) {
     const content = await fs.promises.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     const codeLines = lines.filter((line) => line.trim().length > 0 && !line.trim().startsWith("//"));
@@ -7362,7 +7142,7 @@ var CodeContextTool = class {
     };
   }
 };
-var pathExists11 = async (filePath) => {
+var pathExists10 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
     return true;
@@ -7375,7 +7155,6 @@ var RefactoringAssistantTool = class {
     this.name = "refactoring_assistant";
     this.description = "Perform safe code refactoring operations including rename, extract, inline, and move operations";
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
     this.multiFileEditor = new MultiFileEditorTool();
     this.operationHistory = new OperationHistoryTool();
@@ -7482,7 +7261,7 @@ var RefactoringAssistantTool = class {
     if (!filePath || startLine === void 0 || endLine === void 0 || !functionName) {
       throw new Error("File path, line range, and function name are required");
     }
-    if (!await pathExists11(filePath)) {
+    if (!await pathExists10(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
     const content = await fs.promises.readFile(filePath, "utf-8");
@@ -7618,19 +7397,7 @@ var RefactoringAssistantTool = class {
   }
   async performInlineFunction(request) {
     const { symbolName, filePath, preserveComments } = request;
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: true,
-      symbolTypes: ["function"]
-    });
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error("Failed to parse file");
-    }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error("Failed to parse file");
-    }
-    const symbols = parsed.result.symbols;
+    const symbols = this.intelligenceEngine.getFileSymbols(filePath);
     const functionSymbol = symbols.find((s) => s.name === symbolName && s.type === "function");
     if (!functionSymbol) {
       throw new Error(`Function '${symbolName}' not found`);
@@ -7708,10 +7475,10 @@ var RefactoringAssistantTool = class {
       safety
     };
   }
-  async performInlineVariable(request) {
+  async performInlineVariable(_request) {
     throw new Error("Inline variable not yet implemented");
   }
-  async performMove(request) {
+  async performMove(_request) {
     throw new Error("Move operation not yet implemented");
   }
   // Helper methods
@@ -7771,7 +7538,7 @@ var RefactoringAssistantTool = class {
     }
     return changes;
   }
-  async analyzeExtractedCode(code, filePath) {
+  async analyzeExtractedCode(code, _filePath) {
     const lines = code.split("\n");
     const parameters = [];
     const localVariables = [];
@@ -7799,7 +7566,7 @@ var RefactoringAssistantTool = class {
     ).join(", ");
     return `function ${name}(${params})${returnType !== "void" ? `: ${returnType}` : ""}`;
   }
-  createExtractedFunction(signature, body, localVars) {
+  createExtractedFunction(signature, body, _localVars) {
     return `${signature} {
 ${body}
 }`;
@@ -7819,7 +7586,7 @@ ${body}
     const bodyEnd = lines.length - 1;
     return lines.slice(bodyStart, bodyEnd).join("\n");
   }
-  findFunctionCalls(usages, functionName) {
+  findFunctionCalls(usages, _functionName) {
     const calls = [];
     for (const usage of usages) {
       for (const u of usage.usages) {
@@ -7837,7 +7604,7 @@ ${body}
     }
     return calls;
   }
-  inlineFunction(functionBody, args) {
+  inlineFunction(functionBody, _args) {
     return functionBody;
   }
   extractComments(code) {
@@ -8211,21 +7978,36 @@ var CodeIntelligenceEngine = class {
     }
   }
   async parseWithTreeSitter(content, language, _filePath) {
-    const parser = this.parsers.get(language);
-    if (!parser) {
-      throw new Error(`No parser available for language: ${language}`);
+    try {
+      const parser = this.parsers.get(language);
+      if (!parser) {
+        throw new Error(`No parser available for language: ${language}`);
+      }
+      const tree = parser.parse(content);
+      const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
+      const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
+      const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
+      return {
+        tree: tree.rootNode,
+        symbols,
+        imports,
+        exports,
+        errors: []
+      };
+    } catch (error) {
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors: [{
+          message: error instanceof Error ? error.message : String(error),
+          line: 0,
+          column: 0,
+          severity: "error"
+        }]
+      };
     }
-    const tree = parser.parse(content);
-    const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
-    const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
-    const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
-    return {
-      tree: tree.rootNode,
-      symbols,
-      imports,
-      exports,
-      errors: []
-    };
   }
   // ==================== Symbol Extraction (TypeScript) ====================
   extractTypeScriptSymbols(ast, _content) {
@@ -8816,6 +8598,12 @@ var CodeIntelligenceEngine = class {
   getFileMetadata(filePath) {
     return this.fileMetadata.get(filePath);
   }
+  getParseErrors(filePath) {
+    if (filePath) {
+      return this.parseErrors.get(filePath);
+    }
+    return new Map(this.parseErrors);
+  }
   getAllFiles() {
     return Array.from(this.fileMetadata.keys());
   }
@@ -8847,23 +8635,23 @@ var CodeIntelligenceEngine = class {
       }
     }
     const visited = /* @__PURE__ */ new Set();
-    const path26 = [];
+    const path25 = [];
     const dfs = (file) => {
-      if (path26.includes(file)) {
-        const cycleStart = path26.indexOf(file);
-        circularDependencies.push(path26.slice(cycleStart).concat([file]));
+      if (path25.includes(file)) {
+        const cycleStart = path25.indexOf(file);
+        circularDependencies.push(path25.slice(cycleStart).concat([file]));
         return;
       }
       if (visited.has(file)) return;
       visited.add(file);
-      path26.push(file);
+      path25.push(file);
       const deps = this.getDependencies(file);
       for (const dep of deps) {
         if (affectedFiles.has(dep)) {
           dfs(dep);
         }
       }
-      path26.pop();
+      path25.pop();
     };
     dfs(filePath);
     if (affectedFiles.size > 10) {
@@ -9090,7 +8878,6 @@ var GrokAgent = class extends EventEmitter {
     this.codeAwareEditor = new CodeAwareEditorTool();
     this.operationHistory = new OperationHistoryTool();
     this.intelligenceEngine = new CodeIntelligenceEngine(process.cwd());
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(this.intelligenceEngine);
     this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
     this.codeContext = new CodeContextTool(this.intelligenceEngine);
@@ -9565,10 +9352,10 @@ Current working directory: ${process.cwd()}`
             return await this.textEditor.view(args.path, range);
           } catch (error) {
             console.warn(`view_file tool failed, falling back to bash: ${error.message}`);
-            const path26 = args.path;
-            let command = `cat "${path26}"`;
+            const path25 = args.path;
+            let command = `cat "${path25}"`;
             if (args.start_line && args.end_line) {
-              command = `sed -n '${args.start_line},${args.end_line}p' "${path26}"`;
+              command = `sed -n '${args.start_line},${args.end_line}p' "${path25}"`;
             }
             return await this.bash.execute(command);
           }
@@ -9713,8 +9500,6 @@ EOF`;
             default:
               return { success: false, error: `Unknown operation_history operation: ${args.operation}` };
           }
-        case "ast_parser":
-          return await this.astParser.execute(args);
         case "symbol_search":
           return await this.symbolSearch.execute(args);
         case "dependency_analyzer":

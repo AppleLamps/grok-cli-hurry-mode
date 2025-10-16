@@ -3,7 +3,7 @@ import chokidar, { FSWatcher } from "chokidar";
 import * as ops from "fs";
 import path from "path";
 import { glob } from "glob";
-import { SymbolInfo, ImportInfo, ExportInfo, ParseError } from "./ast-parser.js";
+import { SymbolInfo, ImportInfo, ExportInfo, ParseError } from "./types.js";
 
 // Conditional tree-sitter imports
 let Parser: any;
@@ -377,23 +377,38 @@ export class CodeIntelligenceEngine {
   }
 
   private async parseWithTreeSitter(content: string, language: string, _filePath: string): Promise<any> {
-    const parser = this.parsers.get(language);
-    if (!parser) {
-      throw new Error(`No parser available for language: ${language}`);
+    try {
+      const parser = this.parsers.get(language);
+      if (!parser) {
+        throw new Error(`No parser available for language: ${language}`);
+      }
+
+      const tree = parser.parse(content);
+      const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
+      const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
+      const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
+
+      return {
+        tree: tree.rootNode,
+        symbols,
+        imports,
+        exports,
+        errors: []
+      };
+    } catch (error) {
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors: [{
+          message: error instanceof Error ? error.message : String(error),
+          line: 0,
+          column: 0,
+          severity: 'error'
+        }]
+      };
     }
-
-    const tree = parser.parse(content);
-    const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
-    const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
-    const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
-
-    return {
-      tree: tree.rootNode,
-      symbols,
-      imports,
-      exports,
-      errors: []
-    };
   }
 
   // ==================== Symbol Extraction (TypeScript) ====================
@@ -894,7 +909,7 @@ export class CodeIntelligenceEngine {
             while ((match = regex.exec(line)) !== null) {
               // Skip if this is the definition itself
               if (ref.filePath === definition.filePath &&
-                  i === definition.symbol.startPosition.row) {
+                i === definition.symbol.startPosition.row) {
                 continue;
               }
 
@@ -1122,6 +1137,13 @@ export class CodeIntelligenceEngine {
 
   getFileMetadata(filePath: string): FileMetadata | undefined {
     return this.fileMetadata.get(filePath);
+  }
+
+  getParseErrors(filePath?: string): Map<string, ParseError[]> | ParseError[] | undefined {
+    if (filePath) {
+      return this.parseErrors.get(filePath);
+    }
+    return new Map(this.parseErrors);
   }
 
   getAllFiles(): string[] {

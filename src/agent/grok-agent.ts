@@ -19,7 +19,6 @@ import {
   FileTreeOperationsTool,
   CodeAwareEditorTool,
   OperationHistoryTool,
-  ASTParserTool,
   SymbolSearchTool,
   DependencyAnalyzerTool,
   CodeContextTool,
@@ -67,7 +66,6 @@ export class GrokAgent extends EventEmitter {
   private operationHistory: OperationHistoryTool;
   // Intelligence tools
   private intelligenceEngine: CodeIntelligenceEngine;
-  private astParser: ASTParserTool;
   private symbolSearch: SymbolSearchTool;
   private dependencyAnalyzer: DependencyAnalyzerTool;
   private codeContext: CodeContextTool;
@@ -112,7 +110,6 @@ export class GrokAgent extends EventEmitter {
     // Initialize intelligence engine
     this.intelligenceEngine = new CodeIntelligenceEngine(process.cwd());
     // Initialize intelligence tools
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(this.intelligenceEngine);
     this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
     this.codeContext = new CodeContextTool(this.intelligenceEngine);
@@ -138,11 +135,10 @@ You have access to these tools:
 CORE TOOLS:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
-- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
-        this.morphEditor
+- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${this.morphEditor
           ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
           : ""
-      }
+        }
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
@@ -552,8 +548,8 @@ Current working directory: ${process.cwd()}`,
               this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
               (accumulatedMessage.tool_calls
                 ? this.tokenCounter.countTokens(
-                    JSON.stringify(accumulatedMessage.tool_calls)
-                  )
+                  JSON.stringify(accumulatedMessage.tool_calls)
+                )
                 : 0);
             totalOutputTokens = currentOutputTokens;
 
@@ -571,8 +567,8 @@ Current working directory: ${process.cwd()}`,
                 tokenCount: inputTokens + totalOutputTokens,
               };
             }
+          }
         }
-      }
 
         // Add assistant entry to history
         const assistantEntry: ChatEntry = {
@@ -891,9 +887,6 @@ Current working directory: ${process.cwd()}`,
             default:
               return { success: false, error: `Unknown operation_history operation: ${args.operation}` };
           }
-
-        case "ast_parser":
-          return await this.astParser.execute(args);
 
         case "symbol_search":
           return await this.symbolSearch.execute(args);

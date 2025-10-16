@@ -1,4 +1,3 @@
-export { ASTParserTool } from "./ast-parser.js";
 export { SymbolSearchTool } from "./symbol-search.js";
 export { DependencyAnalyzerTool } from "./dependency-analyzer.js";
 export { CodeContextTool } from "./code-context.js";
@@ -13,7 +12,7 @@ export type {
   ImportInfo,
   ExportInfo,
   ParseError
-} from "./ast-parser.js";
+} from "./types.js";
 
 export type {
   SymbolReference,

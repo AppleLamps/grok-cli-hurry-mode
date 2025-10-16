@@ -1,5 +1,5 @@
 import { ToolResult } from "../../types/index.js";
-import { ASTParserTool, ImportInfo, ExportInfo } from "./ast-parser.js";
+import { ImportInfo, ExportInfo } from "./types.js";
 import { CodeIntelligenceEngine } from "./engine.js";
 import * as ops from "fs";
 
@@ -68,11 +68,9 @@ export class DependencyAnalyzerTool {
   description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
 
   private intelligenceEngine: CodeIntelligenceEngine;
-  private astParser: ASTParserTool;
 
   constructor(intelligenceEngine: CodeIntelligenceEngine) {
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
   }
 
   async execute(args: any): Promise<ToolResult> {
@@ -95,7 +93,7 @@ export class DependencyAnalyzerTool {
 
       // Find all source files
       const sourceFiles = await this.findSourceFiles(rootPath, filePatterns, excludePatterns);
-      
+
       // Build dependency graph
       const dependencyGraph = await this.buildDependencyGraph(
         sourceFiles,
@@ -160,7 +158,7 @@ export class DependencyAnalyzerTool {
     excludePatterns: string[]
   ): Promise<string[]> {
     const allFiles: string[] = [];
-    
+
     for (const pattern of filePatterns) {
       const files = await glob(pattern, {
         cwd: rootPath,
@@ -176,7 +174,7 @@ export class DependencyAnalyzerTool {
   private async buildDependencyGraph(
     sourceFiles: string[],
     rootPath: string,
-    includeExternals: boolean,
+    _includeExternals: boolean,
     _maxDepth: number
   ): Promise<DependencyGraph> {
     const graph: DependencyGraph = {
@@ -198,41 +196,28 @@ export class DependencyAnalyzerTool {
     // Parse each file and extract imports/exports
     for (const filePath of sourceFiles) {
       try {
-        const parseResult = await this.astParser.execute({
-          filePath,
-          includeSymbols: false,
-          includeImports: true,
-          includeTree: false
-        });
+        // Use the intelligence engine to get dependencies
+        const deps = this.intelligenceEngine.getDependencies(filePath);
+        const dependencies = Array.from(deps);
 
-        if (!parseResult.success || !parseResult.output) continue;
-        const parsed = JSON.parse(parseResult.output);
-        if (parsed.success && parsed.result) {
-          const imports = parsed.result.imports as ImportInfo[] || [];
-          const exports = parsed.result.exports as ExportInfo[] || [];
+        // For now, we'll use empty arrays for imports/exports
+        // The engine tracks dependencies but not the full import/export details
+        const imports: ImportInfo[] = [];
+        const exports: ExportInfo[] = [];
 
-          // Resolve import paths
-          const dependencies = await this.resolveImportPaths(
-            imports,
-            filePath,
-            rootPath,
-            includeExternals
-          );
+        const node: DependencyNode = {
+          filePath: path.relative(rootPath, filePath),
+          absolutePath: filePath,
+          imports,
+          exports,
+          dependencies,
+          dependents: [],
+          isEntryPoint: false,
+          isLeaf: dependencies.length === 0,
+          circularDependencies: []
+        };
 
-          const node: DependencyNode = {
-            filePath: path.relative(rootPath, filePath),
-            absolutePath: filePath,
-            imports,
-            exports,
-            dependencies,
-            dependents: [],
-            isEntryPoint: false,
-            isLeaf: dependencies.length === 0,
-            circularDependencies: []
-          };
-
-          graph.nodes.set(filePath, node);
-        }
+        graph.nodes.set(filePath, node);
       } catch (error) {
         console.warn(`Failed to parse ${filePath}: ${error}`);
       }
@@ -301,10 +286,10 @@ export class DependencyAnalyzerTool {
 
   private async resolveRelativeImport(importPath: string, currentDir: string): Promise<string | null> {
     const basePath = path.resolve(currentDir, importPath);
-    
+
     // Try different extensions
     const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json'];
-    
+
     for (const ext of extensions) {
       const fullPath = basePath + ext;
       if (await pathExists(fullPath)) {
@@ -338,7 +323,7 @@ export class DependencyAnalyzerTool {
         // Found a cycle
         const cycleStart = path.indexOf(filePath);
         const cycle = path.slice(cycleStart).concat([filePath]);
-        
+
         circularDeps.push({
           cycle: cycle.map(fp => graph.nodes.get(fp)?.filePath || fp),
           severity: cycle.length <= 2 ? 'error' : 'warning',
@@ -353,7 +338,7 @@ export class DependencyAnalyzerTool {
 
       visiting.add(filePath);
       const node = graph.nodes.get(filePath);
-      
+
       if (node) {
         for (const dependency of node.dependencies) {
           if (graph.nodes.has(dependency)) {
@@ -385,7 +370,7 @@ export class DependencyAnalyzerTool {
 
       reachable.add(filePath);
       const node = graph.nodes.get(filePath);
-      
+
       if (node) {
         for (const dependency of node.dependencies) {
           if (graph.nodes.has(dependency)) {
@@ -429,12 +414,12 @@ export class DependencyAnalyzerTool {
     ];
 
     const entryPoints: string[] = [];
-    
+
     for (const [filePath, node] of graph.nodes) {
       const fileName = path.basename(filePath);
-      
-      if (node.dependents.length === 0 || 
-          commonEntryPatterns.some(pattern => pattern.test(fileName))) {
+
+      if (node.dependents.length === 0 ||
+        commonEntryPatterns.some(pattern => pattern.test(fileName))) {
         entryPoints.push(filePath);
       }
     }
@@ -449,7 +434,7 @@ export class DependencyAnalyzerTool {
 
     for (const node of graph.nodes.values()) {
       totalDependencies += node.dependencies.length;
-      
+
       // Calculate depth from entry points
       const depth = this.calculateNodeDepth(node.absolutePath, graph);
       maxDepth = Math.max(maxDepth, depth);
@@ -467,15 +452,15 @@ export class DependencyAnalyzerTool {
 
   private calculateNodeDepth(filePath: string, graph: DependencyGraph): number {
     const visited = new Set<string>();
-    
+
     const dfs = (currentPath: string, depth: number): number => {
       if (visited.has(currentPath)) {
         return depth;
       }
-      
+
       visited.add(currentPath);
       const node = graph.nodes.get(currentPath);
-      
+
       if (!node || node.dependencies.length === 0) {
         return depth;
       }
@@ -496,7 +481,7 @@ export class DependencyAnalyzerTool {
 
   private serializeDependencyGraph(graph: DependencyGraph): any {
     const nodes: any[] = [];
-    
+
     for (const [filePath, node] of graph.nodes) {
       nodes.push({
         id: filePath,
@@ -518,7 +503,7 @@ export class DependencyAnalyzerTool {
 
   private generateEdges(graph: DependencyGraph): any[] {
     const edges: any[] = [];
-    
+
     for (const [filePath, node] of graph.nodes) {
       for (const dependency of node.dependencies) {
         if (graph.nodes.has(dependency)) {
@@ -536,46 +521,19 @@ export class DependencyAnalyzerTool {
 
   // Additional utility methods
   async analyzeModule(filePath: string): Promise<ModuleAnalysis> {
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: false,
-      includeImports: true,
-      includeTree: false
-    });
-
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error(`Failed to parse module: ${filePath}`);
-    }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error(`Failed to parse module: ${filePath}`);
-    }
-
-    const imports = parsed.result.imports as ImportInfo[] || [];
+    // Use the intelligence engine to get dependencies
+    const deps = this.intelligenceEngine.getDependencies(filePath);
     const rootPath = process.cwd();
-    
+
     const externalDependencies: string[] = [];
     const internalDependencies: string[] = [];
-    const duplicateImports: string[] = [];
-    const seenSources = new Set<string>();
 
-    for (const importInfo of imports) {
-      if (seenSources.has(importInfo.source)) {
-        duplicateImports.push(importInfo.source);
+    // Classify dependencies as internal or external
+    for (const dep of deps) {
+      if (dep.startsWith('.') || dep.startsWith('/') || path.isAbsolute(dep)) {
+        internalDependencies.push(path.relative(rootPath, dep));
       } else {
-        seenSources.add(importInfo.source);
-      }
-
-      if (importInfo.source.startsWith('.') || importInfo.source.startsWith('/')) {
-        const resolved = await this.resolveRelativeImport(
-          importInfo.source,
-          path.dirname(filePath)
-        );
-        if (resolved) {
-          internalDependencies.push(resolved);
-        }
-      } else {
-        externalDependencies.push(importInfo.source);
+        externalDependencies.push(dep);
       }
     }
 
@@ -586,7 +544,7 @@ export class DependencyAnalyzerTool {
       circularImports: [], // TODO: Implement
       unusedImports: [], // TODO: Implement with symbol usage analysis
       missingDependencies: [], // TODO: Implement with file existence checks
-      duplicateImports
+      duplicateImports: []
     };
   }
 

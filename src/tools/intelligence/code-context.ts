@@ -1,5 +1,5 @@
 import { ToolResult } from "../../types/index.js";
-import { ASTParserTool, SymbolInfo } from "./ast-parser.js";
+import { SymbolInfo } from "./types.js";
 import { SymbolSearchTool } from "./symbol-search.js";
 import { DependencyAnalyzerTool } from "./dependency-analyzer.js";
 import { CodeIntelligenceEngine } from "./engine.js";
@@ -140,13 +140,11 @@ export class CodeContextTool {
   description = "Build intelligent code context, analyze relationships, and provide semantic understanding";
 
   private intelligenceEngine: CodeIntelligenceEngine;
-  private astParser: ASTParserTool;
   private symbolSearch: SymbolSearchTool;
   private dependencyAnalyzer: DependencyAnalyzerTool;
 
   constructor(intelligenceEngine: CodeIntelligenceEngine) {
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
     this.dependencyAnalyzer = new DependencyAnalyzerTool(intelligenceEngine);
   }
@@ -204,24 +202,18 @@ export class CodeContextTool {
     maxRelatedFiles: number,
     _contextDepth: number
   ): Promise<CodeContext> {
-    // Parse the file
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: true,
-      includeImports: true,
-      includeTree: false
-    });
+    // Get symbols and metadata from the intelligence engine
+    const symbols = this.intelligenceEngine.getFileSymbols(filePath);
+    const metadata = this.intelligenceEngine.getFileMetadata(filePath);
 
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error(`Failed to parse file: ${filePath}`);
-    }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error(`Failed to parse file: ${filePath}`);
+    if (!metadata) {
+      throw new Error(`File not indexed: ${filePath}`);
     }
 
-    const symbols = parsed.result.symbols as SymbolInfo[] || [];
-    const imports = parsed.result.imports || [];
+    // Get dependencies (imports are tracked in the dependency graph)
+    // Note: We could use this.intelligenceEngine.getDependencies(filePath) here
+    // but for now we're using the legacy analyzeDependencies method
+    const imports: any[] = []; // We'll build this from dependencies if needed
 
     // Enhance symbols with context
     const contextualSymbols = await this.enhanceSymbolsWithContext(symbols, filePath, rootPath);
@@ -320,7 +312,7 @@ export class CodeContextTool {
     const related: string[] = [];
 
     // Find symbols in same class/scope
-    const sameScope = allSymbols.filter(s => 
+    const sameScope = allSymbols.filter(s =>
       s !== symbol && s.scope === symbol.scope
     );
     related.push(...sameScope.map(s => s.name));
@@ -396,7 +388,7 @@ export class CodeContextTool {
 
     // Name-based semantic analysis
     const name = symbol.name.toLowerCase();
-    
+
     if (name.includes('test') || name.includes('spec')) {
       tags.push('test');
     }
@@ -443,11 +435,11 @@ export class CodeContextTool {
 
   private findParentClass(symbol: SymbolInfo, allSymbols: SymbolInfo[]): string | undefined {
     const classSymbols = allSymbols.filter(s => s.type === 'class');
-    
+
     for (const classSymbol of classSymbols) {
       if (symbol.startPosition.row >= classSymbol.startPosition.row &&
-          symbol.endPosition.row <= classSymbol.endPosition.row &&
-          symbol !== classSymbol) {
+        symbol.endPosition.row <= classSymbol.endPosition.row &&
+        symbol !== classSymbol) {
         return classSymbol.name;
       }
     }
@@ -457,11 +449,11 @@ export class CodeContextTool {
 
   private findParentFunction(symbol: SymbolInfo, allSymbols: SymbolInfo[]): string | undefined {
     const functionSymbols = allSymbols.filter(s => s.type === 'function' || s.type === 'method');
-    
+
     for (const funcSymbol of functionSymbols) {
       if (symbol.startPosition.row >= funcSymbol.startPosition.row &&
-          symbol.endPosition.row <= funcSymbol.endPosition.row &&
-          symbol !== funcSymbol) {
+        symbol.endPosition.row <= funcSymbol.endPosition.row &&
+        symbol !== funcSymbol) {
         return funcSymbol.name;
       }
     }
@@ -583,7 +575,7 @@ export class CodeContextTool {
 
   private inferPurpose(fileName: string, symbols: ContextualSymbol[], _content: string): string {
     const name = fileName.toLowerCase();
-    
+
     if (name.includes('test') || name.includes('spec')) return 'testing';
     if (name.includes('config')) return 'configuration';
     if (name.includes('util') || name.includes('helper')) return 'utility';
@@ -674,7 +666,7 @@ export class CodeContextTool {
 
   private calculateComplexityMetrics(content: string, symbols: ContextualSymbol[]): ComplexityMetrics {
     const lines = content.split('\n');
-    
+
     // Simple complexity calculations
     let cyclomatic = 1; // Base complexity
     let cognitive = 0;
@@ -683,10 +675,10 @@ export class CodeContextTool {
 
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       // Cyclomatic complexity
       if (trimmed.includes('if') || trimmed.includes('while') || trimmed.includes('for') ||
-          trimmed.includes('switch') || trimmed.includes('catch')) {
+        trimmed.includes('switch') || trimmed.includes('catch')) {
         cyclomatic++;
       }
 
@@ -712,7 +704,7 @@ export class CodeContextTool {
   private assessQuality(content: string, symbols: ContextualSymbol[], dependencies: ContextualDependency[]): QualityMetrics {
     const lines = content.split('\n').filter(line => line.trim().length > 0);
     const commentLines = lines.filter(line => line.trim().startsWith('//') || line.trim().startsWith('*'));
-    
+
     // Simple quality metrics
     const commentRatio = commentLines.length / lines.length;
     const averageLineLength = lines.reduce((sum, line) => sum + line.length, 0) / lines.length;
@@ -744,7 +736,7 @@ export class CodeContextTool {
 
     // Maintainability Index (simplified Microsoft formula)
     const averageLineLength = codeLines.reduce((sum, line) => sum + line.length, 0) / codeLines.length;
-    const maintainabilityIndex = Math.max(0, 
+    const maintainabilityIndex = Math.max(0,
       171 - 5.2 * Math.log(averageLineLength) - 0.23 * cyclomaticComplexity - 16.2 * Math.log(linesOfCode)
     );
 
@@ -763,7 +755,7 @@ export class CodeContextTool {
   private calculateCyclomaticComplexity(content: string): number {
     let complexity = 1; // Base complexity
     const complexityKeywords = ['if', 'else', 'while', 'for', 'switch', 'case', 'catch', '&&', '||', '?'];
-    
+
     for (const keyword of complexityKeywords) {
       const matches = content.match(new RegExp(`\\b${keyword}\\b`, 'g'));
       if (matches) {
@@ -781,7 +773,7 @@ export class CodeContextTool {
 
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       // Track nesting
       if (trimmed.includes('{')) nestingLevel++;
       if (trimmed.includes('}')) nestingLevel = Math.max(0, nestingLevel - 1);

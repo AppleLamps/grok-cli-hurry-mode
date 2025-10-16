@@ -6,7 +6,7 @@ export { ConfirmationTool } from "./confirmation-tool.js";
 export { SearchTool } from "./search.js";
 
 // Advanced tools
-export { 
+export {
   MultiFileEditorTool,
   AdvancedSearchTool,
   FileTreeOperationsTool,
@@ -16,7 +16,6 @@ export {
 
 // Intelligence tools
 export {
-  ASTParserTool,
   SymbolSearchTool,
   DependencyAnalyzerTool,
   CodeContextTool,

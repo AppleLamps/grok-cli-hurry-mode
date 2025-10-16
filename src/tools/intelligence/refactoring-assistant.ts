@@ -1,5 +1,5 @@
 import { ToolResult } from "../../types/index.js";
-import { ASTParserTool, SymbolInfo } from "./ast-parser.js";
+import { SymbolInfo } from "./types.js";
 import { SymbolSearchTool, SymbolReference } from "./symbol-search.js";
 import { CodeIntelligenceEngine } from "./engine.js";
 import { MultiFileEditorTool } from "../advanced/multi-file-editor.js";
@@ -95,14 +95,12 @@ export class RefactoringAssistantTool {
   description = "Perform safe code refactoring operations including rename, extract, inline, and move operations";
 
   private intelligenceEngine: CodeIntelligenceEngine;
-  private astParser: ASTParserTool;
   private symbolSearch: SymbolSearchTool;
   private multiFileEditor: MultiFileEditorTool;
   private operationHistory: OperationHistoryTool;
 
   constructor(intelligenceEngine: CodeIntelligenceEngine) {
     this.intelligenceEngine = intelligenceEngine;
-    this.astParser = new ASTParserTool();
     this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
     this.multiFileEditor = new MultiFileEditorTool();
     this.operationHistory = new OperationHistoryTool();
@@ -186,7 +184,7 @@ export class RefactoringAssistantTool {
     }
 
     const symbolRefs = parsed.result.symbols as SymbolReference[];
-    
+
     // Filter by scope
     const relevantRefs = scope === 'file' && filePath
       ? symbolRefs.filter(ref => ref.filePath === filePath)
@@ -205,7 +203,7 @@ export class RefactoringAssistantTool {
 
     for (const ref of relevantRefs) {
       affectedFiles.add(ref.filePath);
-      
+
       const changes = await this.generateRenameChanges(
         ref,
         symbolName,
@@ -258,7 +256,7 @@ export class RefactoringAssistantTool {
 
     // Analyze the extracted code for variables
     const analysis = await this.analyzeExtractedCode(extractedText, filePath);
-    
+
     // Generate function signature
     const functionSignature = this.generateFunctionSignature(
       functionName,
@@ -346,14 +344,14 @@ export class RefactoringAssistantTool {
     // Extract expression
     const startLineContent = lines[startLine];
     const endLineContent = lines[endLine];
-    
+
     let expression: string;
     if (startLine === endLine) {
       expression = startLineContent.substring(startColumn, endColumn);
     } else {
       expression = startLineContent.substring(startColumn) + '\n' +
-                  lines.slice(startLine + 1, endLine).join('\n') + '\n' +
-                  endLineContent.substring(0, endColumn);
+        lines.slice(startLine + 1, endLine).join('\n') + '\n' +
+        endLineContent.substring(0, endColumn);
     }
 
     // Generate variable declaration
@@ -411,23 +409,9 @@ export class RefactoringAssistantTool {
   private async performInlineFunction(request: InlineRequest): Promise<RefactoringOperation> {
     const { symbolName, filePath, preserveComments } = request;
 
-    // Find function definition
-    const parseResult = await this.astParser.execute({
-      filePath,
-      includeSymbols: true,
-      symbolTypes: ['function']
-    });
-
-    if (!parseResult.success || !parseResult.output) {
-      throw new Error("Failed to parse file");
-    }
-    const parsed = JSON.parse(parseResult.output);
-    if (!parsed.success) {
-      throw new Error("Failed to parse file");
-    }
-
-    const symbols = parsed.result.symbols as SymbolInfo[];
-    const functionSymbol = symbols.find(s => s.name === symbolName && s.type === 'function');
+    // Find function definition using the intelligence engine
+    const symbols = this.intelligenceEngine.getFileSymbols(filePath);
+    const functionSymbol = symbols.find((s: SymbolInfo) => s.name === symbolName && s.type === 'function');
 
     if (!functionSymbol) {
       throw new Error(`Function '${symbolName}' not found`);
@@ -465,7 +449,7 @@ export class RefactoringAssistantTool {
     for (const call of functionCalls) {
       affectedFiles.add(call.filePath);
       const inlinedCode = this.inlineFunction(functionBody, call.arguments);
-      
+
       // Add change to replace function call with inlined code
       const changes: TextChange[] = [{
         startLine: call.line,
@@ -585,12 +569,12 @@ export class RefactoringAssistantTool {
     // Simple text replacement for now
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      
+
       // Skip comments and strings if not requested
       if (!includeComments && (line.trim().startsWith('//') || line.trim().startsWith('*'))) {
         continue;
       }
-      
+
       if (!includeStrings && (line.includes('"') || line.includes("'"))) {
         continue;
       }
@@ -598,7 +582,7 @@ export class RefactoringAssistantTool {
       // Find word boundaries to avoid partial matches
       const regex = new RegExp(`\\b${oldName}\\b`, 'g');
       let match;
-      
+
       while ((match = regex.exec(line)) !== null) {
         changes.push({
           startLine: i,
@@ -647,7 +631,7 @@ export class RefactoringAssistantTool {
     parameters: ExtractedParameter[],
     returnType: string
   ): string {
-    const params = parameters.map(p => 
+    const params = parameters.map(p =>
       `${p.name}${p.type ? `: ${p.type}` : ''}${p.defaultValue ? ` = ${p.defaultValue}` : ''}`
     ).join(', ');
 
@@ -669,7 +653,7 @@ export class RefactoringAssistantTool {
   ): string {
     const args = parameters.map(p => p.name).join(', ');
     const call = `${name}(${args})`;
-    
+
     return returnVar ? `const ${returnVar} = ${call};` : `${call};`;
   }
 
@@ -683,14 +667,14 @@ export class RefactoringAssistantTool {
     const lines = functionCode.split('\n');
     const bodyStart = lines.findIndex(line => line.includes('{')) + 1;
     const bodyEnd = lines.length - 1; // Assume last line has }
-    
+
     return lines.slice(bodyStart, bodyEnd).join('\n');
   }
 
   private findFunctionCalls(usages: SymbolReference[], _functionName: string): any[] {
     // Find actual function calls vs just references
     const calls: any[] = [];
-    
+
     for (const usage of usages) {
       for (const u of usage.usages) {
         if (u.type === 'call') {
@@ -716,9 +700,9 @@ export class RefactoringAssistantTool {
 
   private extractComments(code: string): string {
     const lines = code.split('\n');
-    const comments = lines.filter(line => 
-      line.trim().startsWith('//') || 
-      line.trim().startsWith('*') || 
+    const comments = lines.filter(line =>
+      line.trim().startsWith('//') ||
+      line.trim().startsWith('*') ||
       line.trim().startsWith('/*')
     );
     return comments.join('\n');
@@ -731,19 +715,19 @@ export class RefactoringAssistantTool {
     newValue: string
   ): string {
     let preview = `${operation.toUpperCase()}: ${oldValue} → ${newValue}\n\n`;
-    
+
     for (const fileChange of fileChanges) {
       preview += `File: ${fileChange.filePath}\n`;
       preview += `Changes: ${fileChange.changes.length}\n`;
-      
+
       for (const change of fileChange.changes.slice(0, 3)) { // Show first 3 changes
         preview += `  Line ${change.startLine}: ${change.oldText} → ${change.newText}\n`;
       }
-      
+
       if (fileChange.changes.length > 3) {
         preview += `  ... and ${fileChange.changes.length - 3} more changes\n`;
       }
-      
+
       preview += '\n';
     }
 

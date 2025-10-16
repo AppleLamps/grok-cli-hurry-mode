@@ -7684,8 +7684,132 @@ External references: ${Array.from(analysis.externalReferences).join(", ")}`;
   async performInlineVariable(_request) {
     throw new Error("Inline variable not yet implemented");
   }
-  async performMove(_request) {
-    throw new Error("Move operation not yet implemented");
+  async performMove(request) {
+    const { symbolName, sourceFile, targetFile, createTargetFile = false } = request;
+    if (!symbolName || !sourceFile || !targetFile) {
+      throw new Error("Symbol name, source file, and target file are required");
+    }
+    if (!await pathExists10(sourceFile)) {
+      throw new Error(`Source file not found: ${sourceFile}`);
+    }
+    if (!await pathExists10(targetFile) && !createTargetFile) {
+      throw new Error(`Target file not found: ${targetFile}. Set createTargetFile=true to create it.`);
+    }
+    const symbols = this.intelligenceEngine.getFileSymbols(sourceFile);
+    const symbol = symbols.find((s) => s.name === symbolName);
+    if (!symbol) {
+      throw new Error(`Symbol '${symbolName}' not found in ${sourceFile}`);
+    }
+    const operationType = symbol.type === "class" ? "move_class" : "move_function";
+    const sourceContent = await fs.promises.readFile(sourceFile, "utf-8");
+    const sourceLines = sourceContent.split("\n");
+    let targetContent = "";
+    let targetLines = [];
+    if (await pathExists10(targetFile)) {
+      targetContent = await fs.promises.readFile(targetFile, "utf-8");
+      targetLines = targetContent.split("\n");
+    }
+    const symbolCode = this.extractSymbolCode(sourceLines, symbol);
+    const dependents = this.intelligenceEngine.getDependents(sourceFile);
+    const affectedFiles = /* @__PURE__ */ new Set();
+    for (const dependent of dependents) {
+      const crossRef = this.intelligenceEngine.findReferences(symbolName);
+      if (crossRef) {
+        for (const ref of crossRef.references) {
+          if (ref.file === dependent && ref.type === "import") {
+            affectedFiles.add(dependent);
+          }
+        }
+      }
+    }
+    const fileChanges = [];
+    const sourceChanges = [{
+      startLine: symbol.startPosition.row,
+      startColumn: 0,
+      endLine: symbol.endPosition.row + 1,
+      endColumn: 0,
+      oldText: symbolCode,
+      newText: "",
+      type: "replace"
+    }];
+    fileChanges.push({
+      filePath: sourceFile,
+      changes: sourceChanges
+    });
+    const targetChanges = [];
+    if (targetLines.length === 0) {
+      targetChanges.push({
+        startLine: 0,
+        startColumn: 0,
+        endLine: 0,
+        endColumn: 0,
+        oldText: "",
+        newText: symbolCode + "\n",
+        type: "insert"
+      });
+    } else {
+      targetChanges.push({
+        startLine: targetLines.length,
+        startColumn: 0,
+        endLine: targetLines.length,
+        endColumn: 0,
+        oldText: "",
+        newText: "\n" + symbolCode + "\n",
+        type: "insert"
+      });
+    }
+    fileChanges.push({
+      filePath: targetFile,
+      changes: targetChanges
+    });
+    for (const dependentFile of affectedFiles) {
+      const importChanges = await this.updateImportsForMove(
+        dependentFile,
+        symbolName,
+        sourceFile,
+        targetFile
+      );
+      if (importChanges.length > 0) {
+        fileChanges.push({
+          filePath: dependentFile,
+          changes: importChanges
+        });
+      }
+    }
+    const riskLevel = this.assessMoveRisk(affectedFiles.size, symbol.type);
+    const potentialIssues = [];
+    if (affectedFiles.size > 5) {
+      potentialIssues.push(`Affects ${affectedFiles.size} files`);
+    }
+    if (symbol.type === "class") {
+      potentialIssues.push("Moving a class may affect inheritance hierarchies");
+    }
+    const targetDeps = this.intelligenceEngine.getDependencies(targetFile);
+    if (targetDeps.has(sourceFile)) {
+      potentialIssues.push("\u26A0\uFE0F  Warning: May create circular dependency");
+    }
+    const safety = {
+      riskLevel,
+      potentialIssues,
+      affectedFiles: fileChanges.length,
+      affectedSymbols: 1,
+      requiresTests: true,
+      breakingChanges: affectedFiles.size > 0
+    };
+    const preview = this.generateMovePreview(
+      symbolName,
+      sourceFile,
+      targetFile,
+      affectedFiles.size,
+      operationType
+    );
+    return {
+      type: operationType,
+      description: `Move ${symbol.type} '${symbolName}' from ${path7__default.basename(sourceFile)} to ${path7__default.basename(targetFile)}`,
+      files: fileChanges,
+      preview,
+      safety
+    };
   }
   // Helper methods
   isValidIdentifier(name) {
@@ -8047,6 +8171,90 @@ ${body}
       (line) => line.trim().startsWith("//") || line.trim().startsWith("*") || line.trim().startsWith("/*")
     );
     return comments.join("\n");
+  }
+  extractSymbolCode(lines, symbol) {
+    let startLine = symbol.startPosition.row;
+    let endLine = symbol.endPosition.row;
+    for (let i = startLine - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("*") || line === "") {
+        startLine = i;
+      } else {
+        break;
+      }
+    }
+    const symbolLines = lines.slice(startLine, endLine + 1);
+    return symbolLines.join("\n");
+  }
+  async updateImportsForMove(dependentFile, symbolName, oldSourceFile, newSourceFile) {
+    const changes = [];
+    try {
+      const content = await fs.promises.readFile(dependentFile, "utf-8");
+      const lines = content.split("\n");
+      const dependentDir = path7__default.dirname(dependentFile);
+      const oldRelativePath = path7__default.relative(dependentDir, oldSourceFile).replace(/\\/g, "/");
+      const newRelativePath = path7__default.relative(dependentDir, newSourceFile).replace(/\\/g, "/");
+      const oldImportPath = oldRelativePath.startsWith(".") ? oldRelativePath : "./" + oldRelativePath;
+      const newImportPath = newRelativePath.startsWith(".") ? newRelativePath : "./" + newRelativePath;
+      const oldImportPathNoExt = oldImportPath.replace(/\.(ts|tsx|js|jsx)$/, "");
+      const newImportPathNoExt = newImportPath.replace(/\.(ts|tsx|js|jsx)$/, "");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const importRegex = new RegExp(`import\\s+.*from\\s+['"]${oldImportPathNoExt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}['"]`);
+        if (importRegex.test(line)) {
+          const newLine = line.replace(oldImportPathNoExt, newImportPathNoExt);
+          changes.push({
+            startLine: i,
+            startColumn: 0,
+            endLine: i,
+            endColumn: line.length,
+            oldText: line,
+            newText: newLine,
+            type: "replace"
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to update imports in ${dependentFile}:`, error);
+    }
+    return changes;
+  }
+  assessMoveRisk(affectedFilesCount, symbolType) {
+    if (affectedFilesCount === 0) {
+      return "low";
+    } else if (affectedFilesCount <= 3) {
+      return symbolType === "class" ? "medium" : "low";
+    } else if (affectedFilesCount <= 10) {
+      return "medium";
+    } else {
+      return "high";
+    }
+  }
+  generateMovePreview(symbolName, sourceFile, targetFile, affectedFilesCount, operationType) {
+    const sourceName = path7__default.basename(sourceFile);
+    const targetName = path7__default.basename(targetFile);
+    let preview = `--- Move ${operationType === "move_class" ? "Class" : "Function"} ---
+`;
+    preview += `Symbol: ${symbolName}
+`;
+    preview += `From: ${sourceName}
+`;
+    preview += `To: ${targetName}
+`;
+    preview += `
+`;
+    preview += `--- Impact ---
+`;
+    preview += `Files affected: ${affectedFilesCount + 2}
+`;
+    preview += `Import updates: ${affectedFilesCount} files
+`;
+    if (affectedFilesCount > 0) {
+      preview += `
+\u26A0\uFE0F  This operation will update import statements in ${affectedFilesCount} dependent files.
+`;
+    }
+    return preview;
   }
   generatePreview(fileChanges, operation, oldValue, newValue) {
     let preview = `${operation.toUpperCase()}: ${oldValue} \u2192 ${newValue}

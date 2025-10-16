@@ -543,9 +543,172 @@ export class RefactoringAssistantTool {
     throw new Error("Inline variable not yet implemented");
   }
 
-  private async performMove(_request: MoveRequest): Promise<RefactoringOperation> {
-    // Move function or class to different file
-    throw new Error("Move operation not yet implemented");
+  private async performMove(request: MoveRequest): Promise<RefactoringOperation> {
+    const { symbolName, sourceFile, targetFile, createTargetFile = false } = request;
+
+    if (!symbolName || !sourceFile || !targetFile) {
+      throw new Error("Symbol name, source file, and target file are required");
+    }
+
+    if (!await pathExists(sourceFile)) {
+      throw new Error(`Source file not found: ${sourceFile}`);
+    }
+
+    if (!await pathExists(targetFile) && !createTargetFile) {
+      throw new Error(`Target file not found: ${targetFile}. Set createTargetFile=true to create it.`);
+    }
+
+    // Find the symbol in the source file
+    const symbols = this.intelligenceEngine.getFileSymbols(sourceFile);
+    const symbol = symbols.find(s => s.name === symbolName);
+
+    if (!symbol) {
+      throw new Error(`Symbol '${symbolName}' not found in ${sourceFile}`);
+    }
+
+    // Determine operation type based on symbol type
+    const operationType = symbol.type === 'class' ? 'move_class' : 'move_function';
+
+    // Read source and target files
+    const sourceContent = await ops.promises.readFile(sourceFile, 'utf-8');
+    const sourceLines = sourceContent.split('\n');
+
+    let targetContent = '';
+    let targetLines: string[] = [];
+    if (await pathExists(targetFile)) {
+      targetContent = await ops.promises.readFile(targetFile, 'utf-8');
+      targetLines = targetContent.split('\n');
+    }
+
+    // Extract the symbol code from source file
+    const symbolCode = this.extractSymbolCode(sourceLines, symbol);
+
+    // Find all files that import this symbol
+    const dependents = this.intelligenceEngine.getDependents(sourceFile);
+    const affectedFiles = new Set<string>();
+
+    // Check which dependents actually import this symbol
+    for (const dependent of dependents) {
+      const crossRef = this.intelligenceEngine.findReferences(symbolName);
+      if (crossRef) {
+        for (const ref of crossRef.references) {
+          if (ref.file === dependent && ref.type === 'import') {
+            affectedFiles.add(dependent);
+          }
+        }
+      }
+    }
+
+    // Prepare file changes
+    const fileChanges: RefactoringFileChange[] = [];
+
+    // 1. Remove symbol from source file
+    const sourceChanges: TextChange[] = [{
+      startLine: symbol.startPosition.row,
+      startColumn: 0,
+      endLine: symbol.endPosition.row + 1,
+      endColumn: 0,
+      oldText: symbolCode,
+      newText: '',
+      type: 'replace'
+    }];
+
+    fileChanges.push({
+      filePath: sourceFile,
+      changes: sourceChanges
+    });
+
+    // 2. Add symbol to target file
+    const targetChanges: TextChange[] = [];
+
+    if (targetLines.length === 0) {
+      // New file - add symbol at the beginning
+      targetChanges.push({
+        startLine: 0,
+        startColumn: 0,
+        endLine: 0,
+        endColumn: 0,
+        oldText: '',
+        newText: symbolCode + '\n',
+        type: 'insert'
+      });
+    } else {
+      // Existing file - add at the end
+      targetChanges.push({
+        startLine: targetLines.length,
+        startColumn: 0,
+        endLine: targetLines.length,
+        endColumn: 0,
+        oldText: '',
+        newText: '\n' + symbolCode + '\n',
+        type: 'insert'
+      });
+    }
+
+    fileChanges.push({
+      filePath: targetFile,
+      changes: targetChanges
+    });
+
+    // 3. Update imports in dependent files
+    for (const dependentFile of affectedFiles) {
+      const importChanges = await this.updateImportsForMove(
+        dependentFile,
+        symbolName,
+        sourceFile,
+        targetFile
+      );
+
+      if (importChanges.length > 0) {
+        fileChanges.push({
+          filePath: dependentFile,
+          changes: importChanges
+        });
+      }
+    }
+
+    // Safety analysis
+    const riskLevel = this.assessMoveRisk(affectedFiles.size, symbol.type);
+    const potentialIssues: string[] = [];
+
+    if (affectedFiles.size > 5) {
+      potentialIssues.push(`Affects ${affectedFiles.size} files`);
+    }
+
+    if (symbol.type === 'class') {
+      potentialIssues.push('Moving a class may affect inheritance hierarchies');
+    }
+
+    // Check for circular dependencies
+    const targetDeps = this.intelligenceEngine.getDependencies(targetFile);
+    if (targetDeps.has(sourceFile)) {
+      potentialIssues.push('⚠️  Warning: May create circular dependency');
+    }
+
+    const safety: SafetyAnalysis = {
+      riskLevel,
+      potentialIssues,
+      affectedFiles: fileChanges.length,
+      affectedSymbols: 1,
+      requiresTests: true,
+      breakingChanges: affectedFiles.size > 0
+    };
+
+    const preview = this.generateMovePreview(
+      symbolName,
+      sourceFile,
+      targetFile,
+      affectedFiles.size,
+      operationType
+    );
+
+    return {
+      type: operationType,
+      description: `Move ${symbol.type} '${symbolName}' from ${path.basename(sourceFile)} to ${path.basename(targetFile)}`,
+      files: fileChanges,
+      preview,
+      safety
+    };
   }
 
   // Helper methods
@@ -997,6 +1160,117 @@ export class RefactoringAssistantTool {
       line.trim().startsWith('/*')
     );
     return comments.join('\n');
+  }
+
+  private extractSymbolCode(lines: string[], symbol: SymbolInfo): string {
+    // Extract the code for the symbol, including any leading comments
+    let startLine = symbol.startPosition.row;
+    let endLine = symbol.endPosition.row;
+
+    // Look for JSDoc or comments above the symbol
+    for (let i = startLine - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*') || line === '') {
+        startLine = i;
+      } else {
+        break;
+      }
+    }
+
+    // Extract the lines
+    const symbolLines = lines.slice(startLine, endLine + 1);
+    return symbolLines.join('\n');
+  }
+
+  private async updateImportsForMove(
+    dependentFile: string,
+    symbolName: string,
+    oldSourceFile: string,
+    newSourceFile: string
+  ): Promise<TextChange[]> {
+    const changes: TextChange[] = [];
+
+    try {
+      const content = await ops.promises.readFile(dependentFile, 'utf-8');
+      const lines = content.split('\n');
+
+      // Calculate the new import path relative to the dependent file
+      const dependentDir = path.dirname(dependentFile);
+      const oldRelativePath = path.relative(dependentDir, oldSourceFile).replace(/\\/g, '/');
+      const newRelativePath = path.relative(dependentDir, newSourceFile).replace(/\\/g, '/');
+
+      // Ensure paths start with './' or '../'
+      const oldImportPath = oldRelativePath.startsWith('.') ? oldRelativePath : './' + oldRelativePath;
+      const newImportPath = newRelativePath.startsWith('.') ? newRelativePath : './' + newRelativePath;
+
+      // Remove file extension for import paths
+      const oldImportPathNoExt = oldImportPath.replace(/\.(ts|tsx|js|jsx)$/, '');
+      const newImportPathNoExt = newImportPath.replace(/\.(ts|tsx|js|jsx)$/, '');
+
+      // Find and update import statements
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Match import statements that import from the old source file
+        const importRegex = new RegExp(`import\\s+.*from\\s+['"]${oldImportPathNoExt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`);
+
+        if (importRegex.test(line)) {
+          const newLine = line.replace(oldImportPathNoExt, newImportPathNoExt);
+
+          changes.push({
+            startLine: i,
+            startColumn: 0,
+            endLine: i,
+            endColumn: line.length,
+            oldText: line,
+            newText: newLine,
+            type: 'replace'
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to update imports in ${dependentFile}:`, error);
+    }
+
+    return changes;
+  }
+
+  private assessMoveRisk(affectedFilesCount: number, symbolType: string): 'low' | 'medium' | 'high' {
+    if (affectedFilesCount === 0) {
+      return 'low';
+    } else if (affectedFilesCount <= 3) {
+      return symbolType === 'class' ? 'medium' : 'low';
+    } else if (affectedFilesCount <= 10) {
+      return 'medium';
+    } else {
+      return 'high';
+    }
+  }
+
+  private generateMovePreview(
+    symbolName: string,
+    sourceFile: string,
+    targetFile: string,
+    affectedFilesCount: number,
+    operationType: string
+  ): string {
+    const sourceName = path.basename(sourceFile);
+    const targetName = path.basename(targetFile);
+
+    let preview = `--- Move ${operationType === 'move_class' ? 'Class' : 'Function'} ---\n`;
+    preview += `Symbol: ${symbolName}\n`;
+    preview += `From: ${sourceName}\n`;
+    preview += `To: ${targetName}\n`;
+    preview += `\n`;
+    preview += `--- Impact ---\n`;
+    preview += `Files affected: ${affectedFilesCount + 2}\n`; // +2 for source and target
+    preview += `Import updates: ${affectedFilesCount} files\n`;
+
+    if (affectedFilesCount > 0) {
+      preview += `\n⚠️  This operation will update import statements in ${affectedFilesCount} dependent files.\n`;
+    }
+
+    return preview;
   }
 
   private generatePreview(

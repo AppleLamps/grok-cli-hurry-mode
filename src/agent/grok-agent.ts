@@ -14,6 +14,7 @@ import {
   TodoTool,
   ConfirmationTool,
   SearchTool,
+  TaskPlannerTool,
   MultiFileEditorTool,
   AdvancedSearchTool,
   FileTreeOperationsTool,
@@ -58,6 +59,7 @@ export class GrokAgent extends EventEmitter {
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
+  private taskPlanner: TaskPlannerTool;
   // Advanced tools
   private multiFileEditor: MultiFileEditorTool;
   private advancedSearch: AdvancedSearchTool;
@@ -101,6 +103,7 @@ export class GrokAgent extends EventEmitter {
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
+    this.taskPlanner = new TaskPlannerTool(process.cwd());
     // Initialize advanced tools
     this.multiFileEditor = new MultiFileEditorTool();
     this.advancedSearch = new AdvancedSearchTool();
@@ -143,6 +146,7 @@ CORE TOOLS:
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+- task_planner: Intelligent multi-step task planning with automatic decomposition and execution
 
 ADVANCED TOOLS:
 - multi_file_edit: Perform atomic operations across multiple files with transaction support
@@ -899,6 +903,9 @@ Current working directory: ${process.cwd()}`,
 
         case "refactoring_assistant":
           return await this.refactoringAssistant.execute(args);
+
+        case "task_planner":
+          return await this.taskPlanner.execute(args);
 
         default:
           // Check if this is an MCP tool

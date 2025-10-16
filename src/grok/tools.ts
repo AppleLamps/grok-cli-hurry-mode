@@ -510,6 +510,40 @@ const BASE_GROK_TOOLS: GrokTool[] = [
         required: ["operation"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "task_planner",
+      description: "Intelligent multi-step task planning and execution. Automatically breaks down complex tasks into steps, analyzes dependencies, assesses risks, and creates executable plans. Use this for complex refactoring, multi-file operations, or any task requiring multiple coordinated steps.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["create_plan", "preview_plan", "validate_plan"],
+            description: "Operation to perform: create_plan (generate and return plan), preview_plan (show formatted preview), validate_plan (check plan validity)"
+          },
+          userRequest: {
+            type: "string",
+            description: "Natural language description of the task to plan (e.g., 'Refactor authentication module to use dependency injection', 'Move all utility functions to a shared folder')"
+          },
+          currentDirectory: {
+            type: "string",
+            description: "Current working directory for context (optional)"
+          },
+          allowRisky: {
+            type: "boolean",
+            description: "Allow high-risk operations (default: false)"
+          },
+          autoRollback: {
+            type: "boolean",
+            description: "Automatically rollback on failure (default: true)"
+          }
+        },
+        required: ["operation", "userRequest"]
+      }
+    }
   }
 ];
 

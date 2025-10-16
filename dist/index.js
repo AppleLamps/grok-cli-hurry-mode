@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import * as fs from 'fs';
 import fs__default, { existsSync } from 'fs';
-import * as path7 from 'path';
-import path7__default from 'path';
+import * as path10 from 'path';
+import path10__default from 'path';
 import * as os from 'os';
 import React2, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
@@ -16,11 +16,11 @@ import axios from 'axios';
 import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import { writeFile } from 'fs/promises';
-import * as ops6 from 'fs-extra';
-import Fuse from 'fuse.js';
-import { glob } from 'glob';
 import { parse } from '@typescript-eslint/typescript-estree';
 import chokidar from 'chokidar';
+import { glob } from 'glob';
+import * as ops9 from 'fs-extra';
+import Fuse from 'fuse.js';
 import { encoding_for_model, get_encoding } from 'tiktoken';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
 import crypto from 'crypto';
@@ -65,12 +65,12 @@ var init_settings_manager = __esm({
     };
     SettingsManager = class _SettingsManager {
       constructor() {
-        this.userSettingsPath = path7.join(
+        this.userSettingsPath = path10.join(
           os.homedir(),
           ".grok",
           "user-settings.json"
         );
-        this.projectSettingsPath = path7.join(
+        this.projectSettingsPath = path10.join(
           process.cwd(),
           ".grok",
           "settings.json"
@@ -89,7 +89,7 @@ var init_settings_manager = __esm({
        * Ensure directory exists for a given file path
        */
       ensureDirectoryExists(filePath) {
-        const dir = path7.dirname(filePath);
+        const dir = path10.dirname(filePath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true, mode: 448 });
         }
@@ -1218,6 +1218,40 @@ var BASE_GROK_TOOLS = [
         required: ["operation"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "task_planner",
+      description: "Intelligent multi-step task planning and execution. Automatically breaks down complex tasks into steps, analyzes dependencies, assesses risks, and creates executable plans. Use this for complex refactoring, multi-file operations, or any task requiring multiple coordinated steps.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["create_plan", "preview_plan", "validate_plan"],
+            description: "Operation to perform: create_plan (generate and return plan), preview_plan (show formatted preview), validate_plan (check plan validity)"
+          },
+          userRequest: {
+            type: "string",
+            description: "Natural language description of the task to plan (e.g., 'Refactor authentication module to use dependency injection', 'Move all utility functions to a shared folder')"
+          },
+          currentDirectory: {
+            type: "string",
+            description: "Current working directory for context (optional)"
+          },
+          allowRisky: {
+            type: "boolean",
+            description: "Allow high-risk operations (default: false)"
+          },
+          autoRollback: {
+            type: "boolean",
+            description: "Automatically rollback on failure (default: true)"
+          }
+        },
+        required: ["operation", "userRequest"]
+      }
+    }
   }
 ];
 var MORPH_EDIT_TOOL = {
@@ -1494,7 +1528,7 @@ var TextEditorTool = class {
   }
   async view(filePath, viewRange) {
     try {
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (await pathExists(resolvedPath)) {
         const stats = await fs.promises.stat(resolvedPath);
         if (stats.isDirectory()) {
@@ -1548,7 +1582,7 @@ ${numberedLines}${additionalLinesMessage}`
           error: "oldStr cannot be an empty string"
         };
       }
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1621,7 +1655,7 @@ ${numberedLines}${additionalLinesMessage}`
   }
   async create(filePath, content) {
     try {
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1654,7 +1688,7 @@ ${numberedLines}${additionalLinesMessage}`
           };
         }
       }
-      const dir = path7.dirname(resolvedPath);
+      const dir = path10.dirname(resolvedPath);
       await fs.promises.mkdir(dir, { recursive: true });
       await writeFile(resolvedPath, content, "utf-8");
       this.editHistory.push({
@@ -1678,7 +1712,7 @@ ${numberedLines}${additionalLinesMessage}`
   }
   async replaceLines(filePath, startLine, endLine, newContent) {
     try {
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1746,7 +1780,7 @@ ${numberedLines}${additionalLinesMessage}`
   }
   async insert(filePath, insertLine, content) {
     try {
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -2042,7 +2076,7 @@ var MorphEditorTool = class {
    */
   async editFile(targetFile, instructions, codeEdit) {
     try {
-      const resolvedPath = path7.resolve(targetFile);
+      const resolvedPath = path10.resolve(targetFile);
       if (!await pathExists2(resolvedPath)) {
         return {
           success: false,
@@ -2250,7 +2284,7 @@ ${codeEdit}`
   }
   async view(filePath, viewRange) {
     try {
-      const resolvedPath = path7.resolve(filePath);
+      const resolvedPath = path10.resolve(filePath);
       if (await pathExists2(resolvedPath)) {
         const stats = await fs.promises.stat(resolvedPath);
         if (stats.isDirectory()) {
@@ -2675,8 +2709,8 @@ var SearchTool = class {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (files.length >= maxResults) break;
-          const fullPath = path7.join(dir, entry.name);
-          const relativePath = path7.relative(this.currentDirectory, fullPath);
+          const fullPath = path10.join(dir, entry.name);
+          const relativePath = path10.relative(this.currentDirectory, fullPath);
           if (!options.includeHidden && entry.name.startsWith(".")) {
             continue;
           }
@@ -2784,9 +2818,3430 @@ var SearchTool = class {
     return this.currentDirectory;
   }
 };
+var Parser;
+var JavaScript;
+var TypeScript;
+var Python;
+try {
+  Parser = __require("tree-sitter");
+  JavaScript = __require("tree-sitter-javascript");
+  TypeScript = __require("tree-sitter-typescript");
+  Python = __require("tree-sitter-python");
+} catch {
+  console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
+}
+var CodeIntelligenceEngine = class {
+  constructor(rootPath, options) {
+    // Core data structures
+    this.fileAsts = /* @__PURE__ */ new Map();
+    // filePath -> AST
+    this.fileMetadata = /* @__PURE__ */ new Map();
+    // filePath -> metadata
+    this.symbolIndex = /* @__PURE__ */ new Map();
+    // symbolName -> references
+    this.dependencyGraph = /* @__PURE__ */ new Map();
+    // filePath -> dependencies
+    this.reverseDependencies = /* @__PURE__ */ new Map();
+    // filePath -> dependents
+    this.crossReferences = /* @__PURE__ */ new Map();
+    // symbolName -> cross-refs
+    this.parseErrors = /* @__PURE__ */ new Map();
+    // filePath -> errors
+    // Parser instances
+    this.parsers = /* @__PURE__ */ new Map();
+    // File watcher
+    this.watcher = null;
+    this.isInitialized = false;
+    this.isIndexing = false;
+    this.filePatterns = ["**/*.{ts,tsx,js,jsx,py}"];
+    this.excludePatterns = ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/.grok/**"];
+    // Performance tracking
+    this.statistics = {
+      totalFiles: 0,
+      indexedFiles: 0,
+      totalSymbols: 0,
+      totalDependencies: 0,
+      memoryUsage: 0,
+      lastUpdateTime: 0,
+      averageParseTime: 0
+    };
+    // Debouncing for file changes
+    this.pendingUpdates = /* @__PURE__ */ new Map();
+    this.updateDebounceMs = 300;
+    this.rootPath = path10__default.resolve(rootPath);
+    if (options?.filePatterns) {
+      this.filePatterns = options.filePatterns;
+    }
+    if (options?.excludePatterns) {
+      this.excludePatterns = options.excludePatterns;
+    }
+    if (options?.updateDebounceMs !== void 0) {
+      this.updateDebounceMs = options.updateDebounceMs;
+    }
+    this.initializeParsers();
+  }
+  // ==================== Initialization ====================
+  initializeParsers() {
+    if (!Parser || !JavaScript || !TypeScript || !Python) {
+      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
+      return;
+    }
+    try {
+      const jsParser = new Parser();
+      jsParser.setLanguage(JavaScript);
+      this.parsers.set("javascript", jsParser);
+      this.parsers.set("js", jsParser);
+      this.parsers.set("jsx", jsParser);
+      const tsParser = new Parser();
+      tsParser.setLanguage(TypeScript.typescript);
+      this.parsers.set("typescript", tsParser);
+      this.parsers.set("ts", tsParser);
+      const tsxParser = new Parser();
+      tsxParser.setLanguage(TypeScript.tsx);
+      this.parsers.set("tsx", tsxParser);
+      const pyParser = new Parser();
+      pyParser.setLanguage(Python);
+      this.parsers.set("python", pyParser);
+      this.parsers.set("py", pyParser);
+    } catch (error) {
+      console.warn("Failed to initialize some parsers:", error);
+    }
+  }
+  async initialize() {
+    if (this.isInitialized) {
+      console.warn("CodeIntelligenceEngine already initialized");
+      return;
+    }
+    console.log(`\u{1F9E0} Initializing Code Intelligence Engine for: ${this.rootPath}`);
+    const startTime = Date.now();
+    try {
+      const sourceFiles = await this.scanSourceFiles();
+      console.log(`   Found ${sourceFiles.length} source files`);
+      this.isIndexing = true;
+      await this.indexFiles(sourceFiles);
+      this.isIndexing = false;
+      this.buildCrossReferences();
+      this.startFileWatcher();
+      this.updateStatistics();
+      this.isInitialized = true;
+      const duration = Date.now() - startTime;
+      console.log(`\u2705 Engine initialized in ${duration}ms`);
+      console.log(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
+    } catch (error) {
+      console.error("Failed to initialize Code Intelligence Engine:", error);
+      throw error;
+    }
+  }
+  async scanSourceFiles() {
+    const allFiles = [];
+    for (const pattern of this.filePatterns) {
+      const files = await glob(pattern, {
+        cwd: this.rootPath,
+        absolute: true,
+        ignore: this.excludePatterns,
+        nodir: true
+      });
+      allFiles.push(...files);
+    }
+    return [...new Set(allFiles)];
+  }
+  async indexFiles(files) {
+    const total = files.length;
+    let indexed = 0;
+    const batchSize = 10;
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
+      await Promise.all(batch.map((file) => this.indexFile(file)));
+      indexed += batch.length;
+      if (indexed % 50 === 0 || indexed === total) {
+        console.log(`   Indexing progress: ${indexed}/${total}`);
+      }
+    }
+  }
+  async indexFile(filePath) {
+    try {
+      const parseStart = Date.now();
+      const stats = await fs.promises.stat(filePath);
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      const hash = this.computeHash(content);
+      const language = this.detectLanguage(filePath);
+      const existing = this.fileMetadata.get(filePath);
+      if (existing && existing.hash === hash) {
+        return;
+      }
+      const parseResult = await this.parseFile(filePath, content, language);
+      const parseTime = Date.now() - parseStart;
+      if (parseResult.tree) {
+        this.fileAsts.set(filePath, parseResult.tree);
+      }
+      this.fileMetadata.set(filePath, {
+        filePath: path10__default.relative(this.rootPath, filePath),
+        absolutePath: filePath,
+        language,
+        lastModified: stats.mtimeMs,
+        hash,
+        parseTime,
+        indexed: true
+      });
+      this.indexSymbols(filePath, parseResult.symbols);
+      this.indexDependencies(filePath, parseResult.imports);
+      if (parseResult.errors.length > 0) {
+        this.parseErrors.set(filePath, parseResult.errors);
+      } else {
+        this.parseErrors.delete(filePath);
+      }
+    } catch (error) {
+      console.warn(`Failed to index ${filePath}:`, error);
+      this.parseErrors.set(filePath, [{
+        message: error instanceof Error ? error.message : String(error),
+        line: 0,
+        column: 0,
+        severity: "error"
+      }]);
+    }
+  }
+  async parseFile(filePath, content, language) {
+    const errors = [];
+    try {
+      if (language === "typescript" || language === "tsx" || language === "javascript" || language === "jsx") {
+        return await this.parseWithTypeScript(content, language);
+      }
+      return await this.parseWithTreeSitter(content, language, filePath);
+    } catch (error) {
+      errors.push({
+        message: error instanceof Error ? error.message : String(error),
+        line: 0,
+        column: 0,
+        severity: "error"
+      });
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors
+      };
+    }
+  }
+  async parseWithTypeScript(content, language) {
+    try {
+      const ast = parse(content, {
+        jsx: language === "tsx" || language === "jsx",
+        loc: true,
+        range: true,
+        comment: true,
+        attachComments: true,
+        errorOnUnknownASTType: false,
+        errorOnTypeScriptSyntacticAndSemanticIssues: false
+      });
+      const symbols = this.extractTypeScriptSymbols(ast, content);
+      const imports = this.extractTypeScriptImports(ast);
+      const exports = this.extractTypeScriptExports(ast);
+      return {
+        tree: ast,
+        symbols,
+        imports,
+        exports,
+        errors: []
+      };
+    } catch (error) {
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors: [{
+          message: error instanceof Error ? error.message : String(error),
+          line: 0,
+          column: 0,
+          severity: "error"
+        }]
+      };
+    }
+  }
+  async parseWithTreeSitter(content, language, _filePath) {
+    try {
+      const parser = this.parsers.get(language);
+      if (!parser) {
+        throw new Error(`No parser available for language: ${language}`);
+      }
+      const tree = parser.parse(content);
+      const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
+      const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
+      const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
+      return {
+        tree: tree.rootNode,
+        symbols,
+        imports,
+        exports,
+        errors: []
+      };
+    } catch (error) {
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors: [{
+          message: error instanceof Error ? error.message : String(error),
+          line: 0,
+          column: 0,
+          severity: "error"
+        }]
+      };
+    }
+  }
+  // ==================== Symbol Extraction (TypeScript) ====================
+  extractTypeScriptSymbols(ast, _content) {
+    const symbols = [];
+    const visit = (node, scope = "global") => {
+      if (!node) return;
+      const getPosition = (pos) => ({
+        row: pos.line - 1,
+        column: pos.column
+      });
+      switch (node.type) {
+        case "FunctionDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "function",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope,
+              isAsync: node.async,
+              parameters: node.params?.map((param) => ({
+                name: param.name || param.left?.name || "unknown",
+                type: param.typeAnnotation?.typeAnnotation?.type,
+                optional: param.optional
+              })) || []
+            });
+          }
+          break;
+        case "ClassDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "class",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          node.body?.body?.forEach((member) => {
+            if (member.type === "MethodDefinition" && member.key?.name) {
+              symbols.push({
+                name: member.key.name,
+                type: "method",
+                startPosition: getPosition(member.loc.start),
+                endPosition: getPosition(member.loc.end),
+                scope: `${node.id?.name || "unknown"}.${member.key.name}`,
+                accessibility: member.accessibility,
+                isStatic: member.static,
+                isAsync: member.value?.async
+              });
+            }
+          });
+          break;
+        case "VariableDeclaration":
+          node.declarations?.forEach((decl) => {
+            if (decl.id?.name) {
+              symbols.push({
+                name: decl.id.name,
+                type: "variable",
+                startPosition: getPosition(decl.loc.start),
+                endPosition: getPosition(decl.loc.end),
+                scope
+              });
+            }
+          });
+          break;
+        case "TSInterfaceDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "interface",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+        case "TSEnumDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "enum",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+        case "TSTypeAliasDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "type",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild, scope);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child, scope);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return symbols;
+  }
+  extractTypeScriptImports(ast) {
+    const imports = [];
+    const visit = (node) => {
+      if (node.type === "ImportDeclaration") {
+        const specifiers = [];
+        node.specifiers?.forEach((spec) => {
+          switch (spec.type) {
+            case "ImportDefaultSpecifier":
+              specifiers.push({
+                name: spec.local.name,
+                isDefault: true
+              });
+              break;
+            case "ImportNamespaceSpecifier":
+              specifiers.push({
+                name: spec.local.name,
+                isNamespace: true
+              });
+              break;
+            case "ImportSpecifier":
+              specifiers.push({
+                name: spec.imported.name,
+                alias: spec.local.name !== spec.imported.name ? spec.local.name : void 0
+              });
+              break;
+          }
+        });
+        imports.push({
+          source: node.source.value,
+          specifiers,
+          isTypeOnly: node.importKind === "type",
+          startPosition: {
+            row: node.loc.start.line - 1,
+            column: node.loc.start.column
+          }
+        });
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return imports;
+  }
+  extractTypeScriptExports(ast) {
+    const exports = [];
+    const visit = (node) => {
+      switch (node.type) {
+        case "ExportNamedDeclaration":
+          if (node.declaration) {
+            if (node.declaration.id?.name) {
+              exports.push({
+                name: node.declaration.id.name,
+                type: this.getDeclarationType(node.declaration.type),
+                startPosition: {
+                  row: node.loc.start.line - 1,
+                  column: node.loc.start.column
+                }
+              });
+            }
+          } else if (node.specifiers) {
+            node.specifiers.forEach((spec) => {
+              exports.push({
+                name: spec.exported.name,
+                type: "variable",
+                startPosition: {
+                  row: node.loc.start.line - 1,
+                  column: node.loc.start.column
+                },
+                source: node.source?.value
+              });
+            });
+          }
+          break;
+        case "ExportDefaultDeclaration":
+          const name = node.declaration?.id?.name || "default";
+          exports.push({
+            name,
+            type: this.getDeclarationType(node.declaration?.type) || "default",
+            startPosition: {
+              row: node.loc.start.line - 1,
+              column: node.loc.start.column
+            },
+            isDefault: true
+          });
+          break;
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return exports;
+  }
+  // ==================== Symbol Extraction (Tree-sitter) ====================
+  extractTreeSitterSymbols(node, _content, _language) {
+    const symbols = [];
+    const visit = (node2, scope = "global") => {
+      const startPos = { row: node2.startPosition.row, column: node2.startPosition.column };
+      const endPos = { row: node2.endPosition.row, column: node2.endPosition.column };
+      switch (node2.type) {
+        case "function_declaration":
+        case "function_definition":
+          const funcName = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
+          if (funcName) {
+            symbols.push({
+              name: funcName,
+              type: "function",
+              startPosition: startPos,
+              endPosition: endPos,
+              scope
+            });
+          }
+          break;
+        case "class_declaration":
+        case "class_definition":
+          const className = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
+          if (className) {
+            symbols.push({
+              name: className,
+              type: "class",
+              startPosition: startPos,
+              endPosition: endPos,
+              scope
+            });
+          }
+          break;
+        case "variable_declaration":
+        case "lexical_declaration":
+          node2.children?.forEach((child) => {
+            if (child.type === "variable_declarator") {
+              const varName = this.extractNodeName(child, "name") || this.extractNodeName(child, "identifier");
+              if (varName) {
+                symbols.push({
+                  name: varName,
+                  type: "variable",
+                  startPosition: { row: child.startPosition.row, column: child.startPosition.column },
+                  endPosition: { row: child.endPosition.row, column: child.endPosition.column },
+                  scope
+                });
+              }
+            }
+          });
+          break;
+      }
+      node2.children?.forEach((child) => visit(child, scope));
+    };
+    visit(node);
+    return symbols;
+  }
+  extractTreeSitterImports(node, content, _language) {
+    const imports = [];
+    const visit = (node2) => {
+      if (node2.type === "import_statement" || node2.type === "import_from_statement") {
+        const sourceNode = node2.children?.find(
+          (child) => child.type === "string" || child.type === "string_literal"
+        );
+        if (sourceNode) {
+          const source = content.slice(sourceNode.startIndex + 1, sourceNode.endIndex - 1);
+          imports.push({
+            source,
+            specifiers: [],
+            startPosition: {
+              row: node2.startPosition.row,
+              column: node2.startPosition.column
+            }
+          });
+        }
+      }
+      node2.children?.forEach((child) => visit(child));
+    };
+    visit(node);
+    return imports;
+  }
+  extractTreeSitterExports(node, _content, _language) {
+    const exports = [];
+    const visit = (node2) => {
+      if (node2.type === "export_statement") {
+        const name = this.extractNodeName(node2, "name") || "unknown";
+        exports.push({
+          name,
+          type: "variable",
+          startPosition: {
+            row: node2.startPosition.row,
+            column: node2.startPosition.column
+          }
+        });
+      }
+      node2.children?.forEach((child) => visit(child));
+    };
+    visit(node);
+    return exports;
+  }
+  // ==================== Symbol Indexing ====================
+  indexSymbols(filePath, symbols) {
+    for (const symbol of symbols) {
+      const existing = this.symbolIndex.get(symbol.name) || [];
+      const filtered = existing.filter((ref) => ref.filePath !== filePath);
+      const symbolRef = {
+        symbol,
+        filePath,
+        usages: []
+        // Will be populated by buildCrossReferences
+      };
+      filtered.push(symbolRef);
+      this.symbolIndex.set(symbol.name, filtered);
+    }
+  }
+  indexDependencies(filePath, imports) {
+    const dependencies = /* @__PURE__ */ new Set();
+    for (const importInfo of imports) {
+      if (importInfo.source.startsWith(".")) {
+        const resolvedPath = this.resolveImportPath(importInfo.source, filePath);
+        if (resolvedPath) {
+          dependencies.add(resolvedPath);
+        }
+      }
+    }
+    this.dependencyGraph.set(filePath, dependencies);
+    for (const dependency of dependencies) {
+      const dependents = this.reverseDependencies.get(dependency) || /* @__PURE__ */ new Set();
+      dependents.add(filePath);
+      this.reverseDependencies.set(dependency, dependents);
+    }
+  }
+  resolveImportPath(importPath, currentFile) {
+    const currentDir = path10__default.dirname(currentFile);
+    const basePath = path10__default.resolve(currentDir, importPath);
+    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
+    for (const ext of extensions) {
+      const fullPath = basePath + ext;
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+    for (const ext of extensions) {
+      const indexPath = path10__default.join(basePath, `index${ext}`);
+      if (fs.existsSync(indexPath)) {
+        return indexPath;
+      }
+    }
+    return null;
+  }
+  // ==================== Cross-Reference Building ====================
+  buildCrossReferences() {
+    this.crossReferences.clear();
+    for (const [symbolName, symbolRefs] of this.symbolIndex) {
+      const definition = symbolRefs.find(
+        (ref) => ref.symbol.startPosition.row >= 0
+      );
+      if (!definition) continue;
+      const crossRef = {
+        symbolName,
+        definitionFile: definition.filePath,
+        definitionLocation: {
+          line: definition.symbol.startPosition.row,
+          column: definition.symbol.startPosition.column
+        },
+        references: []
+      };
+      for (const ref of symbolRefs) {
+        if (ref.filePath === definition.filePath) {
+          crossRef.references.push({
+            file: ref.filePath,
+            line: ref.symbol.startPosition.row,
+            column: ref.symbol.startPosition.column,
+            type: "definition"
+          });
+        }
+        try {
+          const content = fs.readFileSync(ref.filePath, "utf-8");
+          const lines = content.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const regex = new RegExp(`\\b${symbolName}\\b`, "g");
+            let match;
+            while ((match = regex.exec(line)) !== null) {
+              if (ref.filePath === definition.filePath && i === definition.symbol.startPosition.row) {
+                continue;
+              }
+              let usageType = "reference";
+              if (line.includes("import") && line.includes(symbolName)) {
+                usageType = "import";
+              } else if (line.includes("export") && line.includes(symbolName)) {
+                usageType = "export";
+              } else if (line.includes(symbolName + "(")) {
+                usageType = "call";
+              }
+              crossRef.references.push({
+                file: ref.filePath,
+                line: i,
+                column: match.index,
+                type: usageType
+              });
+            }
+          }
+        } catch {
+        }
+      }
+      this.crossReferences.set(symbolName, crossRef);
+    }
+  }
+  // ==================== File Watching ====================
+  startFileWatcher() {
+    console.log("   Starting file watcher...");
+    this.watcher = chokidar.watch(this.filePatterns, {
+      cwd: this.rootPath,
+      ignored: this.excludePatterns,
+      persistent: true,
+      ignoreInitial: true,
+      // Don't fire events for existing files
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 100
+      }
+    });
+    this.watcher.on("add", (relPath) => {
+      const absPath = path10__default.resolve(this.rootPath, relPath);
+      this.scheduleFileUpdate(absPath, "add");
+    }).on("change", (relPath) => {
+      const absPath = path10__default.resolve(this.rootPath, relPath);
+      this.scheduleFileUpdate(absPath, "change");
+    }).on("unlink", (relPath) => {
+      const absPath = path10__default.resolve(this.rootPath, relPath);
+      this.handleFileDelete(absPath);
+    }).on("error", (err) => {
+      console.error("File watcher error:", err);
+    });
+  }
+  scheduleFileUpdate(filePath, event) {
+    const existing = this.pendingUpdates.get(filePath);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timeout = setTimeout(async () => {
+      this.pendingUpdates.delete(filePath);
+      await this.handleFileUpdate(filePath, event);
+    }, this.updateDebounceMs);
+    this.pendingUpdates.set(filePath, timeout);
+  }
+  async handleFileUpdate(filePath, _event) {
+    if (this.isIndexing) {
+      return;
+    }
+    try {
+      const oldSymbols = this.getFileSymbols(filePath);
+      await this.indexFile(filePath);
+      const newSymbols = this.getFileSymbols(filePath);
+      const affectedSymbols = /* @__PURE__ */ new Set([
+        ...oldSymbols.map((s) => s.name),
+        ...newSymbols.map((s) => s.name)
+      ]);
+      for (const symbolName of affectedSymbols) {
+        const refs = this.symbolIndex.get(symbolName);
+        if (refs) {
+          this.rebuildSymbolCrossReference(symbolName, refs);
+        }
+      }
+      this.updateStatistics();
+      console.log(`   Updated: ${path10__default.relative(this.rootPath, filePath)}`);
+    } catch (error) {
+      console.error(`Failed to update ${filePath}:`, error);
+    }
+  }
+  handleFileDelete(filePath) {
+    this.fileAsts.delete(filePath);
+    this.fileMetadata.delete(filePath);
+    this.parseErrors.delete(filePath);
+    const symbols = this.getFileSymbols(filePath);
+    for (const symbol of symbols) {
+      const refs = this.symbolIndex.get(symbol.name);
+      if (refs) {
+        const filtered = refs.filter((ref) => ref.filePath !== filePath);
+        if (filtered.length > 0) {
+          this.symbolIndex.set(symbol.name, filtered);
+        } else {
+          this.symbolIndex.delete(symbol.name);
+        }
+      }
+      this.crossReferences.delete(symbol.name);
+    }
+    this.dependencyGraph.delete(filePath);
+    this.reverseDependencies.delete(filePath);
+    for (const [file, dependents] of this.reverseDependencies) {
+      if (dependents.has(filePath)) {
+        dependents.delete(filePath);
+        if (dependents.size === 0) {
+          this.reverseDependencies.delete(file);
+        }
+      }
+    }
+    this.updateStatistics();
+    console.log(`   Deleted: ${path10__default.relative(this.rootPath, filePath)}`);
+  }
+  rebuildSymbolCrossReference(symbolName, refs) {
+    const definition = refs.find(
+      (ref) => ref.symbol.startPosition.row >= 0
+    );
+    if (!definition) return;
+    const crossRef = {
+      symbolName,
+      definitionFile: definition.filePath,
+      definitionLocation: {
+        line: definition.symbol.startPosition.row,
+        column: definition.symbol.startPosition.column
+      },
+      references: []
+    };
+    this.crossReferences.set(symbolName, crossRef);
+  }
+  // ==================== Public Query API ====================
+  getAST(filePath) {
+    return this.fileAsts.get(filePath);
+  }
+  findSymbol(symbolName) {
+    return this.symbolIndex.get(symbolName) || [];
+  }
+  findSymbolByPattern(pattern, caseSensitive = false) {
+    const results = [];
+    const regex = new RegExp(pattern, caseSensitive ? "" : "i");
+    for (const [symbolName, refs] of this.symbolIndex) {
+      if (regex.test(symbolName)) {
+        results.push(...refs);
+      }
+    }
+    return results;
+  }
+  findReferences(symbolName) {
+    return this.crossReferences.get(symbolName);
+  }
+  getDependencies(filePath) {
+    return this.dependencyGraph.get(filePath) || /* @__PURE__ */ new Set();
+  }
+  getDependents(filePath) {
+    return this.reverseDependencies.get(filePath) || /* @__PURE__ */ new Set();
+  }
+  getFileSymbols(filePath) {
+    const symbols = [];
+    for (const refs of this.symbolIndex.values()) {
+      for (const ref of refs) {
+        if (ref.filePath === filePath) {
+          symbols.push(ref.symbol);
+        }
+      }
+    }
+    return symbols;
+  }
+  getFileMetadata(filePath) {
+    return this.fileMetadata.get(filePath);
+  }
+  getParseErrors(filePath) {
+    if (filePath) {
+      return this.parseErrors.get(filePath);
+    }
+    return new Map(this.parseErrors);
+  }
+  getAllFiles() {
+    return Array.from(this.fileMetadata.keys());
+  }
+  getAllSymbols() {
+    return new Map(this.symbolIndex);
+  }
+  analyzeImpact(filePath, symbolName) {
+    const affectedFiles = /* @__PURE__ */ new Set();
+    const affectedSymbols = /* @__PURE__ */ new Set();
+    const circularDependencies = [];
+    const warnings = [];
+    if (symbolName) {
+      const crossRef = this.crossReferences.get(symbolName);
+      if (crossRef) {
+        for (const ref of crossRef.references) {
+          affectedFiles.add(ref.file);
+        }
+        affectedSymbols.add(symbolName);
+      }
+    } else {
+      affectedFiles.add(filePath);
+      const dependents = this.getDependents(filePath);
+      for (const dependent of dependents) {
+        affectedFiles.add(dependent);
+      }
+      const fileSymbols = this.getFileSymbols(filePath);
+      for (const symbol of fileSymbols) {
+        affectedSymbols.add(symbol.name);
+      }
+    }
+    const visited = /* @__PURE__ */ new Set();
+    const path25 = [];
+    const dfs = (file) => {
+      if (path25.includes(file)) {
+        const cycleStart = path25.indexOf(file);
+        circularDependencies.push(path25.slice(cycleStart).concat([file]));
+        return;
+      }
+      if (visited.has(file)) return;
+      visited.add(file);
+      path25.push(file);
+      const deps = this.getDependencies(file);
+      for (const dep of deps) {
+        if (affectedFiles.has(dep)) {
+          dfs(dep);
+        }
+      }
+      path25.pop();
+    };
+    dfs(filePath);
+    if (affectedFiles.size > 10) {
+      warnings.push("Large number of affected files");
+    }
+    if (circularDependencies.length > 0) {
+      warnings.push("Circular dependencies detected");
+    }
+    if (affectedSymbols.size > 20) {
+      warnings.push("Large number of affected symbols");
+    }
+    let riskLevel = "low";
+    if (affectedFiles.size > 10 || circularDependencies.length > 0) {
+      riskLevel = "high";
+    } else if (affectedFiles.size > 5 || affectedSymbols.size > 10) {
+      riskLevel = "medium";
+    }
+    return {
+      affectedFiles,
+      affectedSymbols,
+      circularDependencies,
+      riskLevel,
+      warnings
+    };
+  }
+  getStatistics() {
+    return { ...this.statistics };
+  }
+  isReady() {
+    return this.isInitialized && !this.isIndexing;
+  }
+  // ==================== Utility Methods ====================
+  detectLanguage(filePath) {
+    const ext = path10__default.extname(filePath).slice(1).toLowerCase();
+    switch (ext) {
+      case "js":
+      case "mjs":
+      case "cjs":
+        return "javascript";
+      case "jsx":
+        return "jsx";
+      case "ts":
+        return "typescript";
+      case "tsx":
+        return "tsx";
+      case "py":
+      case "pyw":
+        return "python";
+      default:
+        return "javascript";
+    }
+  }
+  computeHash(content) {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+  extractNodeName(node, nameField) {
+    const nameNode = node.children?.find((child) => child.type === nameField);
+    return nameNode ? nameNode.text : null;
+  }
+  getDeclarationType(nodeType) {
+    switch (nodeType) {
+      case "FunctionDeclaration":
+        return "function";
+      case "ClassDeclaration":
+        return "class";
+      case "TSInterfaceDeclaration":
+        return "interface";
+      case "TSEnumDeclaration":
+        return "enum";
+      case "TSTypeAliasDeclaration":
+        return "type";
+      default:
+        return "variable";
+    }
+  }
+  updateStatistics() {
+    const totalSymbols = Array.from(this.symbolIndex.values()).reduce((sum, refs) => sum + refs.length, 0);
+    const totalDeps = Array.from(this.dependencyGraph.values()).reduce((sum, deps) => sum + deps.size, 0);
+    const parseTimes = Array.from(this.fileMetadata.values()).map((meta) => meta.parseTime).filter((time) => time > 0);
+    const avgParseTime = parseTimes.length > 0 ? parseTimes.reduce((sum, time) => sum + time, 0) / parseTimes.length : 0;
+    this.statistics = {
+      totalFiles: this.fileMetadata.size,
+      indexedFiles: Array.from(this.fileMetadata.values()).filter((m) => m.indexed).length,
+      totalSymbols,
+      totalDependencies: totalDeps,
+      memoryUsage: process.memoryUsage().heapUsed,
+      lastUpdateTime: Date.now(),
+      averageParseTime: Math.round(avgParseTime)
+    };
+  }
+  // ==================== Cleanup ====================
+  dispose() {
+    console.log("\u{1F9E0} Disposing Code Intelligence Engine");
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+    for (const timeout of this.pendingUpdates.values()) {
+      clearTimeout(timeout);
+    }
+    this.pendingUpdates.clear();
+    this.fileAsts.clear();
+    this.fileMetadata.clear();
+    this.symbolIndex.clear();
+    this.dependencyGraph.clear();
+    this.reverseDependencies.clear();
+    this.crossReferences.clear();
+    this.parseErrors.clear();
+    this.isInitialized = false;
+    console.log("   Engine disposed");
+  }
+};
 var pathExists3 = async (filePath) => {
   try {
-    await ops6.promises.access(filePath, ops6.constants.F_OK);
+    await fs.promises.access(filePath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+var DependencyAnalyzerTool = class {
+  constructor(intelligenceEngine) {
+    this.name = "dependency_analyzer";
+    this.description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
+    this.intelligenceEngine = intelligenceEngine;
+  }
+  async execute(args) {
+    try {
+      const {
+        rootPath = process.cwd(),
+        filePatterns = ["**/*.{ts,tsx,js,jsx}"],
+        excludePatterns = ["**/node_modules/**", "**/dist/**", "**/.git/**"],
+        includeExternals = false,
+        detectCircular = true,
+        findUnreachable = true,
+        generateGraph = false,
+        entryPoints = [],
+        maxDepth = 50
+      } = args;
+      if (!await pathExists3(rootPath)) {
+        throw new Error(`Root path does not exist: ${rootPath}`);
+      }
+      const sourceFiles = await this.findSourceFiles(rootPath, filePatterns, excludePatterns);
+      const dependencyGraph = await this.buildDependencyGraph(
+        sourceFiles,
+        rootPath,
+        includeExternals,
+        maxDepth
+      );
+      if (detectCircular) {
+        dependencyGraph.circularDependencies = this.detectCircularDependencies(dependencyGraph);
+      }
+      if (findUnreachable) {
+        dependencyGraph.unreachableFiles = this.findUnreachableFiles(
+          dependencyGraph,
+          entryPoints.length > 0 ? entryPoints : this.inferEntryPoints(dependencyGraph)
+        );
+      }
+      dependencyGraph.statistics = this.calculateStatistics(dependencyGraph);
+      const result = {
+        rootPath,
+        totalFiles: sourceFiles.length,
+        entryPoints: dependencyGraph.entryPoints,
+        leafNodes: dependencyGraph.leafNodes,
+        statistics: dependencyGraph.statistics
+      };
+      if (detectCircular) {
+        result.circularDependencies = dependencyGraph.circularDependencies;
+      }
+      if (findUnreachable) {
+        result.unreachableFiles = dependencyGraph.unreachableFiles;
+      }
+      if (generateGraph) {
+        result.dependencyGraph = this.serializeDependencyGraph(dependencyGraph);
+      }
+      return {
+        success: true,
+        output: JSON.stringify(result, null, 2)
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  async findSourceFiles(rootPath, filePatterns, excludePatterns) {
+    const allFiles = [];
+    for (const pattern of filePatterns) {
+      const files = await glob(pattern, {
+        cwd: rootPath,
+        absolute: true,
+        ignore: excludePatterns
+      });
+      allFiles.push(...files);
+    }
+    return [...new Set(allFiles)];
+  }
+  async buildDependencyGraph(sourceFiles, rootPath, _includeExternals, _maxDepth) {
+    const graph = {
+      nodes: /* @__PURE__ */ new Map(),
+      entryPoints: [],
+      leafNodes: [],
+      circularDependencies: [],
+      unreachableFiles: [],
+      statistics: {
+        totalFiles: 0,
+        totalDependencies: 0,
+        averageDependencies: 0,
+        maxDependencyDepth: 0,
+        circularDependencyCount: 0,
+        unreachableFileCount: 0
+      }
+    };
+    for (const filePath of sourceFiles) {
+      try {
+        const deps = this.intelligenceEngine.getDependencies(filePath);
+        const dependencies = Array.from(deps);
+        const imports = [];
+        const exports = [];
+        const node = {
+          filePath: path10__default.relative(rootPath, filePath),
+          absolutePath: filePath,
+          imports,
+          exports,
+          dependencies,
+          dependents: [],
+          isEntryPoint: false,
+          isLeaf: dependencies.length === 0,
+          circularDependencies: []
+        };
+        graph.nodes.set(filePath, node);
+      } catch (error) {
+        console.warn(`Failed to parse ${filePath}: ${error}`);
+      }
+    }
+    for (const [filePath, node] of graph.nodes) {
+      for (const dependency of node.dependencies) {
+        const depNode = graph.nodes.get(dependency);
+        if (depNode) {
+          depNode.dependents.push(filePath);
+        }
+      }
+    }
+    for (const [filePath, node] of graph.nodes) {
+      node.isEntryPoint = node.dependents.length === 0;
+      node.isLeaf = node.dependencies.length === 0;
+      if (node.isEntryPoint) {
+        graph.entryPoints.push(filePath);
+      }
+      if (node.isLeaf) {
+        graph.leafNodes.push(filePath);
+      }
+    }
+    return graph;
+  }
+  async resolveImportPaths(imports, currentFile, rootPath, includeExternals) {
+    const dependencies = [];
+    const currentDir = path10__default.dirname(currentFile);
+    for (const importInfo of imports) {
+      let resolvedPath = null;
+      if (importInfo.source.startsWith(".")) {
+        resolvedPath = await this.resolveRelativeImport(importInfo.source, currentDir);
+      } else if (importInfo.source.startsWith("/")) {
+        resolvedPath = await this.resolveAbsoluteImport(importInfo.source, rootPath);
+      } else if (includeExternals) {
+        dependencies.push(importInfo.source);
+        continue;
+      } else {
+        continue;
+      }
+      if (resolvedPath && await pathExists3(resolvedPath)) {
+        dependencies.push(resolvedPath);
+      }
+    }
+    return dependencies;
+  }
+  async resolveRelativeImport(importPath, currentDir) {
+    const basePath = path10__default.resolve(currentDir, importPath);
+    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
+    for (const ext of extensions) {
+      const fullPath = basePath + ext;
+      if (await pathExists3(fullPath)) {
+        return fullPath;
+      }
+    }
+    for (const ext of extensions) {
+      const indexPath = path10__default.join(basePath, `index${ext}`);
+      if (await pathExists3(indexPath)) {
+        return indexPath;
+      }
+    }
+    return null;
+  }
+  async resolveAbsoluteImport(importPath, rootPath) {
+    const fullPath = path10__default.join(rootPath, importPath.slice(1));
+    return await this.resolveRelativeImport(".", path10__default.dirname(fullPath));
+  }
+  detectCircularDependencies(graph) {
+    const circularDeps = [];
+    const visited = /* @__PURE__ */ new Set();
+    const visiting = /* @__PURE__ */ new Set();
+    const dfs = (filePath, path25) => {
+      if (visiting.has(filePath)) {
+        const cycleStart = path25.indexOf(filePath);
+        const cycle = path25.slice(cycleStart).concat([filePath]);
+        circularDeps.push({
+          cycle: cycle.map((fp) => graph.nodes.get(fp)?.filePath || fp),
+          severity: cycle.length <= 2 ? "error" : "warning",
+          type: cycle.length <= 2 ? "direct" : "indirect"
+        });
+        return;
+      }
+      if (visited.has(filePath)) {
+        return;
+      }
+      visiting.add(filePath);
+      const node = graph.nodes.get(filePath);
+      if (node) {
+        for (const dependency of node.dependencies) {
+          if (graph.nodes.has(dependency)) {
+            dfs(dependency, [...path25, filePath]);
+          }
+        }
+      }
+      visiting.delete(filePath);
+      visited.add(filePath);
+    };
+    for (const filePath of graph.nodes.keys()) {
+      if (!visited.has(filePath)) {
+        dfs(filePath, []);
+      }
+    }
+    return circularDeps;
+  }
+  findUnreachableFiles(graph, entryPoints) {
+    const reachable = /* @__PURE__ */ new Set();
+    const dfs = (filePath) => {
+      if (reachable.has(filePath)) {
+        return;
+      }
+      reachable.add(filePath);
+      const node = graph.nodes.get(filePath);
+      if (node) {
+        for (const dependency of node.dependencies) {
+          if (graph.nodes.has(dependency)) {
+            dfs(dependency);
+          }
+        }
+      }
+    };
+    for (const entryPoint of entryPoints) {
+      if (graph.nodes.has(entryPoint)) {
+        dfs(entryPoint);
+      }
+    }
+    const unreachable = [];
+    for (const filePath of graph.nodes.keys()) {
+      if (!reachable.has(filePath)) {
+        const node = graph.nodes.get(filePath);
+        unreachable.push(node?.filePath || filePath);
+      }
+    }
+    return unreachable;
+  }
+  inferEntryPoints(graph) {
+    if (graph.entryPoints.length > 0) {
+      return graph.entryPoints;
+    }
+    const commonEntryPatterns = [
+      /index\.(ts|js|tsx|jsx)$/,
+      /main\.(ts|js|tsx|jsx)$/,
+      /app\.(ts|js|tsx|jsx)$/,
+      /server\.(ts|js|tsx|jsx)$/
+    ];
+    const entryPoints = [];
+    for (const [filePath, node] of graph.nodes) {
+      const fileName = path10__default.basename(filePath);
+      if (node.dependents.length === 0 || commonEntryPatterns.some((pattern) => pattern.test(fileName))) {
+        entryPoints.push(filePath);
+      }
+    }
+    return entryPoints;
+  }
+  calculateStatistics(graph) {
+    const totalFiles = graph.nodes.size;
+    let totalDependencies = 0;
+    let maxDepth = 0;
+    for (const node of graph.nodes.values()) {
+      totalDependencies += node.dependencies.length;
+      const depth = this.calculateNodeDepth(node.absolutePath, graph);
+      maxDepth = Math.max(maxDepth, depth);
+    }
+    return {
+      totalFiles,
+      totalDependencies,
+      averageDependencies: totalFiles > 0 ? totalDependencies / totalFiles : 0,
+      maxDependencyDepth: maxDepth,
+      circularDependencyCount: graph.circularDependencies.length,
+      unreachableFileCount: graph.unreachableFiles.length
+    };
+  }
+  calculateNodeDepth(filePath, graph) {
+    const visited = /* @__PURE__ */ new Set();
+    const dfs = (currentPath, depth) => {
+      if (visited.has(currentPath)) {
+        return depth;
+      }
+      visited.add(currentPath);
+      const node = graph.nodes.get(currentPath);
+      if (!node || node.dependencies.length === 0) {
+        return depth;
+      }
+      let maxChildDepth = depth;
+      for (const dependency of node.dependencies) {
+        if (graph.nodes.has(dependency)) {
+          const childDepth = dfs(dependency, depth + 1);
+          maxChildDepth = Math.max(maxChildDepth, childDepth);
+        }
+      }
+      return maxChildDepth;
+    };
+    return dfs(filePath, 0);
+  }
+  serializeDependencyGraph(graph) {
+    const nodes = [];
+    for (const [filePath, node] of graph.nodes) {
+      nodes.push({
+        id: filePath,
+        filePath: node.filePath,
+        dependencies: node.dependencies,
+        dependents: node.dependents,
+        isEntryPoint: node.isEntryPoint,
+        isLeaf: node.isLeaf,
+        importCount: node.imports.length,
+        exportCount: node.exports.length
+      });
+    }
+    return {
+      nodes,
+      edges: this.generateEdges(graph)
+    };
+  }
+  generateEdges(graph) {
+    const edges = [];
+    for (const [filePath, node] of graph.nodes) {
+      for (const dependency of node.dependencies) {
+        if (graph.nodes.has(dependency)) {
+          edges.push({
+            from: filePath,
+            to: dependency,
+            type: "dependency"
+          });
+        }
+      }
+    }
+    return edges;
+  }
+  // Additional utility methods
+  async analyzeModule(filePath) {
+    const deps = this.intelligenceEngine.getDependencies(filePath);
+    const rootPath = process.cwd();
+    const externalDependencies = [];
+    const internalDependencies = [];
+    for (const dep of deps) {
+      if (dep.startsWith(".") || dep.startsWith("/") || path10__default.isAbsolute(dep)) {
+        internalDependencies.push(path10__default.relative(rootPath, dep));
+      } else {
+        externalDependencies.push(dep);
+      }
+    }
+    return {
+      filePath: path10__default.relative(rootPath, filePath),
+      externalDependencies,
+      internalDependencies,
+      circularImports: [],
+      // TODO: Implement
+      unusedImports: [],
+      // TODO: Implement with symbol usage analysis
+      missingDependencies: [],
+      // TODO: Implement with file existence checks
+      duplicateImports: []
+    };
+  }
+  getSchema() {
+    return {
+      type: "object",
+      properties: {
+        rootPath: {
+          type: "string",
+          description: "Root path to analyze dependencies from",
+          default: "current working directory"
+        },
+        filePatterns: {
+          type: "array",
+          items: { type: "string" },
+          description: "Glob patterns for files to include",
+          default: ["**/*.{ts,tsx,js,jsx}"]
+        },
+        excludePatterns: {
+          type: "array",
+          items: { type: "string" },
+          description: "Glob patterns for files to exclude",
+          default: ["**/node_modules/**", "**/dist/**", "**/.git/**"]
+        },
+        includeExternals: {
+          type: "boolean",
+          description: "Include external module dependencies",
+          default: false
+        },
+        detectCircular: {
+          type: "boolean",
+          description: "Detect circular dependencies",
+          default: true
+        },
+        findUnreachable: {
+          type: "boolean",
+          description: "Find unreachable files from entry points",
+          default: true
+        },
+        generateGraph: {
+          type: "boolean",
+          description: "Generate serialized dependency graph",
+          default: false
+        },
+        entryPoints: {
+          type: "array",
+          items: { type: "string" },
+          description: "Explicit entry point files (if not provided, will be inferred)",
+          default: []
+        },
+        maxDepth: {
+          type: "integer",
+          description: "Maximum dependency depth to analyze",
+          default: 50,
+          minimum: 1,
+          maximum: 1e3
+        }
+      }
+    };
+  }
+};
+
+// src/planning/task-analyzer.ts
+var TaskAnalyzer = class {
+  constructor(rootPath) {
+    this.intelligenceEngine = new CodeIntelligenceEngine(rootPath);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
+  }
+  /**
+   * Analyze a user request to understand what needs to be done
+   */
+  async analyzeRequest(userRequest, context) {
+    const intent = this.extractIntent(userRequest);
+    const scope = await this.determineScope(userRequest, context);
+    const complexity = this.assessComplexity(userRequest, scope);
+    const estimatedSteps = this.estimateSteps(intent, scope, complexity);
+    const suggestedApproach = this.suggestApproach(intent, scope, complexity);
+    const potentialRisks = await this.identifyRisks(intent, scope);
+    const requiredTools = this.identifyRequiredTools(intent, scope);
+    return {
+      intent,
+      scope,
+      complexity,
+      estimatedSteps,
+      suggestedApproach,
+      potentialRisks,
+      requiredTools
+    };
+  }
+  /**
+   * Extract the primary intent from user request
+   */
+  extractIntent(request) {
+    const lowerRequest = request.toLowerCase();
+    if (lowerRequest.includes("refactor")) return "refactor";
+    if (lowerRequest.includes("rename")) return "rename";
+    if (lowerRequest.includes("extract")) return "extract";
+    if (lowerRequest.includes("move")) return "move";
+    if (lowerRequest.includes("inline")) return "inline";
+    if (lowerRequest.includes("create") || lowerRequest.includes("add")) return "create";
+    if (lowerRequest.includes("implement")) return "implement";
+    if (lowerRequest.includes("generate")) return "generate";
+    if (lowerRequest.includes("update") || lowerRequest.includes("modify")) return "modify";
+    if (lowerRequest.includes("fix") || lowerRequest.includes("repair")) return "fix";
+    if (lowerRequest.includes("remove") || lowerRequest.includes("delete")) return "remove";
+    if (lowerRequest.includes("clean")) return "cleanup";
+    if (lowerRequest.includes("analyze") || lowerRequest.includes("find")) return "analyze";
+    return "general";
+  }
+  /**
+   * Determine the scope of the task
+   */
+  async determineScope(request, context) {
+    const files = [];
+    const symbols = [];
+    const dependencies = [];
+    const filePatterns = this.extractFilePatterns(request);
+    const symbolNames = this.extractSymbolNames(request);
+    symbols.push(...symbolNames);
+    if (filePatterns.length > 0) {
+      files.push(...filePatterns);
+    }
+    if (symbolNames.length > 0) {
+      for (const symbolName of symbolNames) {
+        const symbolRefs = this.intelligenceEngine.findSymbol(symbolName);
+        for (const ref of symbolRefs) {
+          if (!files.includes(ref.filePath)) {
+            files.push(ref.filePath);
+          }
+        }
+      }
+    }
+    if (files.length > 0) {
+      for (const file of files) {
+        const deps = this.intelligenceEngine.getDependencies(file);
+        const dependents = this.intelligenceEngine.getDependents(file);
+        deps.forEach((dep) => {
+          if (!dependencies.includes(dep)) {
+            dependencies.push(dep);
+          }
+        });
+        dependents.forEach((dep) => {
+          if (!dependencies.includes(dep)) {
+            dependencies.push(dep);
+          }
+        });
+      }
+    }
+    return { files, symbols, dependencies };
+  }
+  /**
+   * Extract file patterns from request
+   */
+  extractFilePatterns(request) {
+    const patterns = [];
+    const filePathRegex = /(?:^|\s)([a-zA-Z0-9_\-./]+\.[a-z]{2,4})(?:\s|$)/g;
+    let match;
+    while ((match = filePathRegex.exec(request)) !== null) {
+      patterns.push(match[1]);
+    }
+    const dirPathRegex = /(?:^|\s)([a-zA-Z0-9_\-./]+\/)(?:\s|$)/g;
+    while ((match = dirPathRegex.exec(request)) !== null) {
+      patterns.push(match[1] + "**/*");
+    }
+    return patterns;
+  }
+  /**
+   * Extract symbol names from request
+   */
+  extractSymbolNames(request) {
+    const symbols = [];
+    const pascalCaseRegex = /\b([A-Z][a-zA-Z0-9]*(?:[A-Z][a-zA-Z0-9]*)+)\b/g;
+    let match;
+    while ((match = pascalCaseRegex.exec(request)) !== null) {
+      symbols.push(match[1]);
+    }
+    const camelCaseRegex = /\b([a-z][a-zA-Z0-9]*(?:[A-Z][a-zA-Z0-9]*)+)\b/g;
+    while ((match = camelCaseRegex.exec(request)) !== null) {
+      symbols.push(match[1]);
+    }
+    return symbols;
+  }
+  /**
+   * Assess task complexity
+   */
+  assessComplexity(request, scope) {
+    let complexityScore = 0;
+    if (scope.files.length > 10) complexityScore += 3;
+    else if (scope.files.length > 5) complexityScore += 2;
+    else if (scope.files.length > 1) complexityScore += 1;
+    if (scope.dependencies.length > 20) complexityScore += 3;
+    else if (scope.dependencies.length > 10) complexityScore += 2;
+    else if (scope.dependencies.length > 5) complexityScore += 1;
+    const complexIntents = ["refactor", "move", "extract", "implement"];
+    if (complexIntents.some((intent) => request.toLowerCase().includes(intent))) {
+      complexityScore += 2;
+    }
+    if (complexityScore >= 7) return "very_complex";
+    if (complexityScore >= 5) return "complex";
+    if (complexityScore >= 3) return "moderate";
+    return "simple";
+  }
+  /**
+   * Estimate number of steps required
+   */
+  estimateSteps(intent, scope, complexity) {
+    let baseSteps = 1;
+    const intentSteps = {
+      "refactor": 5,
+      "move": 4,
+      "extract": 3,
+      "rename": 3,
+      "create": 2,
+      "modify": 2,
+      "remove": 2,
+      "analyze": 1
+    };
+    baseSteps = intentSteps[intent] || 2;
+    const fileMultiplier = Math.min(scope.files.length, 5);
+    baseSteps *= fileMultiplier;
+    const complexityMultipliers = {
+      "simple": 1,
+      "moderate": 1.5,
+      "complex": 2,
+      "very_complex": 3
+    };
+    return Math.ceil(baseSteps * complexityMultipliers[complexity]);
+  }
+  /**
+   * Suggest an approach for the task
+   */
+  suggestApproach(intent, scope, complexity) {
+    const approaches = {
+      "refactor": "Analyze dependencies \u2192 Create new structure \u2192 Move code \u2192 Update imports \u2192 Validate",
+      "move": "Identify symbol \u2192 Extract code \u2192 Update imports \u2192 Validate references",
+      "extract": "Analyze code \u2192 Detect parameters \u2192 Create new function \u2192 Replace usage",
+      "rename": "Find all usages \u2192 Update references \u2192 Validate no breakage",
+      "create": "Analyze requirements \u2192 Generate code \u2192 Add to project \u2192 Validate",
+      "remove": "Find dependencies \u2192 Remove references \u2192 Delete files \u2192 Validate",
+      "analyze": "Scan codebase \u2192 Build dependency graph \u2192 Generate report"
+    };
+    return approaches[intent] || "Analyze \u2192 Plan \u2192 Execute \u2192 Validate";
+  }
+  /**
+   * Identify potential risks
+   */
+  async identifyRisks(intent, scope) {
+    const risks = [];
+    if (scope.dependencies.length > 0) {
+      risks.push("Potential circular dependency issues");
+    }
+    if (scope.files.some((f) => f.includes("index.ts") || f.includes("main.ts"))) {
+      risks.push("Modifying entry point files - high impact");
+    }
+    if (scope.files.length > 10) {
+      risks.push("Large scope - affects many files");
+    }
+    if (intent === "refactor") {
+      risks.push("Refactoring may break existing functionality");
+    }
+    if (intent === "move") {
+      risks.push("Moving code may break import paths");
+    }
+    if (intent === "remove") {
+      risks.push("Deletion is irreversible without version control");
+    }
+    return risks;
+  }
+  /**
+   * Identify required tools
+   */
+  identifyRequiredTools(intent, scope) {
+    const tools = [];
+    tools.push("code_context");
+    const intentTools = {
+      "refactor": ["refactoring_assistant", "dependency_analyzer", "symbol_search"],
+      "move": ["refactoring_assistant", "code_context"],
+      "extract": ["refactoring_assistant", "code_aware_editor"],
+      "rename": ["refactoring_assistant", "symbol_search"],
+      "create": ["code_aware_editor", "str_replace_editor"],
+      "modify": ["str_replace_editor", "code_aware_editor"],
+      "remove": ["multi_file_editor", "dependency_analyzer"],
+      "analyze": ["dependency_analyzer", "symbol_search", "code_context"]
+    };
+    const specificTools = intentTools[intent] || ["str_replace_editor"];
+    tools.push(...specificTools);
+    return [...new Set(tools)];
+  }
+};
+
+// src/planning/risk-assessor.ts
+var RiskAssessor = class {
+  constructor(rootPath) {
+    this.intelligenceEngine = new CodeIntelligenceEngine(rootPath);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
+  }
+  /**
+   * Assess risk for a single step
+   */
+  async assessStepRisk(step) {
+    const factors = [];
+    let score = 0;
+    const toolRisk = this.assessToolRisk(step.tool);
+    score += toolRisk.score;
+    factors.push(...toolRisk.factors);
+    const typeRisk = this.assessTypeRisk(step.type);
+    score += typeRisk.score;
+    factors.push(...typeRisk.factors);
+    if (step.dependencies.length > 5) {
+      score += 10;
+      factors.push("High dependency count");
+    }
+    let level;
+    if (score >= 70) level = "critical";
+    else if (score >= 50) level = "high";
+    else if (score >= 30) level = "medium";
+    else level = "low";
+    const mitigations = this.generateMitigations(factors, level);
+    return { level, factors, mitigations, score };
+  }
+  /**
+   * Assess risk for entire plan
+   */
+  async assessPlanRisk(steps) {
+    const stepAssessments = await Promise.all(
+      steps.map((step) => this.assessStepRisk(step))
+    );
+    const factors = [];
+    const mitigations = [];
+    let totalScore = 0;
+    for (const assessment of stepAssessments) {
+      totalScore += assessment.score;
+      factors.push(...assessment.factors);
+      mitigations.push(...assessment.mitigations);
+    }
+    const avgScore = totalScore / steps.length;
+    let level;
+    if (avgScore >= 70) level = "critical";
+    else if (avgScore >= 50) level = "high";
+    else if (avgScore >= 30) level = "medium";
+    else level = "low";
+    return {
+      level,
+      factors: [...new Set(factors)],
+      mitigations: [...new Set(mitigations)],
+      score: avgScore
+    };
+  }
+  /**
+   * Assess tool-specific risk
+   */
+  assessToolRisk(tool) {
+    const toolRisks = {
+      "multi_file_editor": { score: 40, factor: "Multi-file operations can affect many files" },
+      "refactoring_assistant": { score: 30, factor: "Refactoring may introduce bugs" },
+      "code_aware_editor": { score: 20, factor: "Code modifications require careful review" },
+      "str_replace_editor": { score: 15, factor: "String replacement may have unintended matches" },
+      "bash": { score: 50, factor: "Shell commands can have system-wide effects" },
+      "dependency_analyzer": { score: 5, factor: "Read-only analysis" },
+      "code_context": { score: 5, factor: "Read-only analysis" },
+      "symbol_search": { score: 5, factor: "Read-only search" }
+    };
+    const risk = toolRisks[tool] || { score: 25, factor: "Unknown tool risk" };
+    return { score: risk.score, factors: [risk.factor] };
+  }
+  /**
+   * Assess operation type risk
+   */
+  assessTypeRisk(type) {
+    const typeRisks = {
+      "delete": { score: 50, factor: "Deletion is irreversible" },
+      "move": { score: 30, factor: "Moving code can break imports" },
+      "refactor": { score: 25, factor: "Refactoring may introduce bugs" },
+      "create": { score: 10, factor: "Creating new files is low risk" },
+      "analyze": { score: 0, factor: "Analysis is read-only" },
+      "validate": { score: 0, factor: "Validation is read-only" },
+      "test": { score: 5, factor: "Testing is generally safe" },
+      "document": { score: 5, factor: "Documentation changes are low risk" }
+    };
+    const risk = typeRisks[type] || { score: 20, factor: "Unknown operation type" };
+    return { score: risk.score, factors: [risk.factor] };
+  }
+  /**
+   * Generate risk mitigations
+   */
+  generateMitigations(factors, level) {
+    const mitigations = [];
+    if (level === "critical" || level === "high") {
+      mitigations.push("Create backup or commit changes before proceeding");
+      mitigations.push("Review plan carefully before execution");
+      mitigations.push("Consider breaking into smaller steps");
+    }
+    if (factors.some((f) => f.includes("Multi-file"))) {
+      mitigations.push("Use transaction support to enable rollback");
+    }
+    if (factors.some((f) => f.includes("Deletion"))) {
+      mitigations.push("Verify files are not needed before deletion");
+      mitigations.push("Ensure version control is in place");
+    }
+    if (factors.some((f) => f.includes("imports"))) {
+      mitigations.push("Validate all import paths after changes");
+    }
+    if (factors.some((f) => f.includes("Shell"))) {
+      mitigations.push("Review shell commands before execution");
+      mitigations.push("Use dry-run mode if available");
+    }
+    return mitigations;
+  }
+  /**
+   * Check if operation should require confirmation
+   */
+  shouldRequireConfirmation(assessment) {
+    return assessment.level === "high" || assessment.level === "critical";
+  }
+  /**
+   * Check if operation should be blocked
+   */
+  shouldBlockOperation(assessment, allowRisky) {
+    return assessment.level === "critical" && !allowRisky;
+  }
+};
+
+// src/planning/task-planner.ts
+var TaskPlanner = class {
+  constructor(rootPath, config2) {
+    this.analyzer = new TaskAnalyzer(rootPath);
+    this.riskAssessor = new RiskAssessor(rootPath);
+    this.config = {
+      maxSteps: 50,
+      maxDuration: 3e5,
+      // 5 minutes
+      allowRiskyOperations: false,
+      requireConfirmation: true,
+      autoRollbackOnFailure: true,
+      parallelExecution: false,
+      maxParallelSteps: 3,
+      ...config2
+    };
+  }
+  /**
+   * Create a plan from user request
+   */
+  async createPlan(userRequest, context) {
+    const analysis = await this.analyzer.analyzeRequest(userRequest, context);
+    const steps = await this.generateSteps(analysis);
+    const totalEstimatedDuration = steps.reduce((sum, step) => sum + step.estimatedDuration, 0);
+    const overallRiskLevel = this.calculateOverallRisk(steps);
+    const plan = {
+      id: this.generatePlanId(),
+      userIntent: userRequest,
+      description: analysis.suggestedApproach,
+      steps,
+      totalEstimatedDuration,
+      overallRiskLevel,
+      createdAt: Date.now(),
+      status: "draft",
+      metadata: {
+        filesAffected: analysis.scope.files,
+        toolsUsed: analysis.requiredTools,
+        dependenciesAnalyzed: true,
+        risksAssessed: true
+      }
+    };
+    return plan;
+  }
+  /**
+   * Validate a plan before execution
+   */
+  async validatePlan(plan) {
+    const errors = [];
+    const warnings = [];
+    const suggestions = [];
+    if (plan.steps.length > this.config.maxSteps) {
+      errors.push(`Plan has ${plan.steps.length} steps, exceeds maximum of ${this.config.maxSteps}`);
+    }
+    if (plan.totalEstimatedDuration > this.config.maxDuration) {
+      warnings.push(`Estimated duration ${Math.round(plan.totalEstimatedDuration / 1e3)}s exceeds recommended ${Math.round(this.config.maxDuration / 1e3)}s`);
+    }
+    if (plan.overallRiskLevel === "critical" && !this.config.allowRiskyOperations) {
+      errors.push("Plan contains critical risk operations which are not allowed");
+    }
+    if (plan.overallRiskLevel === "high") {
+      warnings.push("Plan contains high-risk operations - proceed with caution");
+    }
+    const circularDeps = this.detectCircularDependencies(plan.steps);
+    if (circularDeps.length > 0) {
+      errors.push(`Circular dependencies detected: ${circularDeps.join(", ")}`);
+    }
+    const missingDeps = this.detectMissingDependencies(plan.steps);
+    if (missingDeps.length > 0) {
+      errors.push(`Steps reference non-existent dependencies: ${missingDeps.join(", ")}`);
+    }
+    if (plan.steps.length > 10) {
+      suggestions.push("Consider breaking this into smaller tasks");
+    }
+    if (plan.overallRiskLevel !== "low") {
+      suggestions.push("Review the plan carefully before execution");
+      suggestions.push("Ensure you have version control or backups");
+    }
+    const estimatedSuccessRate = this.estimateSuccessRate(plan, errors, warnings);
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+      suggestions,
+      estimatedSuccessRate
+    };
+  }
+  /**
+   * Generate steps from analysis
+   */
+  async generateSteps(analysis) {
+    const steps = [];
+    let stepCounter = 0;
+    steps.push({
+      id: `step_${++stepCounter}`,
+      type: "analyze",
+      description: "Analyze codebase and dependencies",
+      tool: "code_context",
+      args: {
+        operation: "analyze_context",
+        files: analysis.scope.files
+      },
+      dependencies: [],
+      estimatedDuration: 2e3,
+      riskLevel: "low",
+      status: "pending"
+    });
+    switch (analysis.intent) {
+      case "refactor":
+        steps.push(...this.generateRefactoringSteps(analysis, stepCounter));
+        break;
+      case "move":
+        steps.push(...this.generateMoveSteps(analysis, stepCounter));
+        break;
+      case "extract":
+        steps.push(...this.generateExtractSteps(analysis, stepCounter));
+        break;
+      case "rename":
+        steps.push(...this.generateRenameSteps(analysis, stepCounter));
+        break;
+      case "create":
+        steps.push(...this.generateCreateSteps(analysis, stepCounter));
+        break;
+      case "remove":
+        steps.push(...this.generateRemoveSteps(analysis, stepCounter));
+        break;
+      default:
+        steps.push(...this.generateGenericSteps(analysis, stepCounter));
+    }
+    steps.push({
+      id: `step_${steps.length + 1}`,
+      type: "validate",
+      description: "Validate changes and check for errors",
+      tool: "dependency_analyzer",
+      args: {
+        operation: "analyze_dependencies",
+        rootPath: "."
+      },
+      dependencies: steps.map((s) => s.id),
+      estimatedDuration: 3e3,
+      riskLevel: "low",
+      status: "pending"
+    });
+    return steps;
+  }
+  /**
+   * Generate refactoring steps
+   */
+  generateRefactoringSteps(analysis, startCounter) {
+    const steps = [];
+    let counter = startCounter;
+    steps.push({
+      id: `step_${++counter}`,
+      type: "analyze",
+      description: "Analyze dependencies and impact",
+      tool: "dependency_analyzer",
+      args: { operation: "analyze_dependencies", files: analysis.scope.files },
+      dependencies: ["step_1"],
+      estimatedDuration: 3e3,
+      riskLevel: "low",
+      status: "pending"
+    });
+    steps.push({
+      id: `step_${++counter}`,
+      type: "refactor",
+      description: "Execute refactoring operations",
+      tool: "refactoring_assistant",
+      args: { operation: "refactor", scope: analysis.scope },
+      dependencies: [`step_${counter - 1}`],
+      estimatedDuration: 5e3,
+      riskLevel: "medium",
+      status: "pending"
+    });
+    steps.push({
+      id: `step_${++counter}`,
+      type: "refactor",
+      description: "Update import statements",
+      tool: "multi_file_editor",
+      args: { operation: "update_imports" },
+      dependencies: [`step_${counter - 1}`],
+      estimatedDuration: 2e3,
+      riskLevel: "low",
+      status: "pending"
+    });
+    return steps;
+  }
+  /**
+   * Generate move steps
+   */
+  generateMoveSteps(analysis, startCounter) {
+    const steps = [];
+    let counter = startCounter;
+    for (const symbol of analysis.scope.symbols) {
+      steps.push({
+        id: `step_${++counter}`,
+        type: "move",
+        description: `Move ${symbol} to new location`,
+        tool: "refactoring_assistant",
+        args: { operation: "move_function", symbolName: symbol },
+        dependencies: ["step_1"],
+        estimatedDuration: 4e3,
+        riskLevel: "medium",
+        status: "pending"
+      });
+    }
+    return steps;
+  }
+  /**
+   * Generate extract steps
+   */
+  generateExtractSteps(analysis, startCounter) {
+    return [{
+      id: `step_${startCounter + 1}`,
+      type: "refactor",
+      description: "Extract code into new function",
+      tool: "refactoring_assistant",
+      args: { operation: "extract_function" },
+      dependencies: ["step_1"],
+      estimatedDuration: 3e3,
+      riskLevel: "low",
+      status: "pending"
+    }];
+  }
+  /**
+   * Generate rename steps
+   */
+  generateRenameSteps(analysis, startCounter) {
+    return [{
+      id: `step_${startCounter + 1}`,
+      type: "refactor",
+      description: "Rename symbol across codebase",
+      tool: "refactoring_assistant",
+      args: { operation: "rename_symbol" },
+      dependencies: ["step_1"],
+      estimatedDuration: 3e3,
+      riskLevel: "low",
+      status: "pending"
+    }];
+  }
+  /**
+   * Generate create steps
+   */
+  generateCreateSteps(analysis, startCounter) {
+    return [{
+      id: `step_${startCounter + 1}`,
+      type: "create",
+      description: "Create new files and code",
+      tool: "code_aware_editor",
+      args: { operation: "create" },
+      dependencies: ["step_1"],
+      estimatedDuration: 2e3,
+      riskLevel: "low",
+      status: "pending"
+    }];
+  }
+  /**
+   * Generate remove steps
+   */
+  generateRemoveSteps(analysis, startCounter) {
+    return [{
+      id: `step_${startCounter + 1}`,
+      type: "delete",
+      description: "Remove files and clean up references",
+      tool: "multi_file_editor",
+      args: { operation: "delete", files: analysis.scope.files },
+      dependencies: ["step_1"],
+      estimatedDuration: 2e3,
+      riskLevel: "high",
+      status: "pending"
+    }];
+  }
+  /**
+   * Generate generic steps
+   */
+  generateGenericSteps(analysis, startCounter) {
+    return [{
+      id: `step_${startCounter + 1}`,
+      type: "refactor",
+      description: "Execute requested operation",
+      tool: "str_replace_editor",
+      args: {},
+      dependencies: ["step_1"],
+      estimatedDuration: 3e3,
+      riskLevel: "medium",
+      status: "pending"
+    }];
+  }
+  // Helper methods
+  generatePlanId() {
+    return `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  calculateOverallRisk(steps) {
+    const riskScores = { low: 1, medium: 2, high: 3, critical: 4 };
+    const maxRisk = Math.max(...steps.map((s) => riskScores[s.riskLevel]));
+    if (maxRisk >= 4) return "critical";
+    if (maxRisk >= 3) return "high";
+    if (maxRisk >= 2) return "medium";
+    return "low";
+  }
+  detectCircularDependencies(steps) {
+    return [];
+  }
+  detectMissingDependencies(steps) {
+    const stepIds = new Set(steps.map((s) => s.id));
+    const missing = [];
+    for (const step of steps) {
+      for (const depId of step.dependencies) {
+        if (!stepIds.has(depId)) {
+          missing.push(`${step.id} -> ${depId}`);
+        }
+      }
+    }
+    return missing;
+  }
+  estimateSuccessRate(plan, errors, warnings) {
+    let rate = 100;
+    rate -= errors.length * 20;
+    rate -= warnings.length * 5;
+    if (plan.overallRiskLevel === "critical") rate -= 30;
+    else if (plan.overallRiskLevel === "high") rate -= 15;
+    else if (plan.overallRiskLevel === "medium") rate -= 5;
+    return Math.max(0, Math.min(100, rate));
+  }
+};
+var pathExists4 = async (filePath) => {
+  try {
+    await ops9.promises.access(filePath, ops9.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+var OperationHistoryTool = class {
+  constructor(options = {}) {
+    this.history = [];
+    this.confirmationService = ConfirmationService.getInstance();
+    this.currentPosition = -1;
+    this.options = {
+      maxEntries: 100,
+      maxAge: 7 * 24 * 60 * 60 * 1e3,
+      // 7 days
+      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**"],
+      autoCleanup: true,
+      ...options
+    };
+    const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+    this.historyFile = path10.join(homeDir, ".grok", "operation-history.json");
+    this.loadHistory();
+    if (this.options.autoCleanup) {
+      this.cleanupOldEntries();
+    }
+  }
+  /**
+   * Record a new operation in history
+   */
+  async recordOperation(operation, description, files, rollbackData, metadata = {}) {
+    try {
+      const fileSnapshots = await this.createFileSnapshots(files);
+      const entry = {
+        id: this.generateId(),
+        timestamp: /* @__PURE__ */ new Date(),
+        operation,
+        description,
+        rollbackData: {
+          ...rollbackData,
+          files: fileSnapshots
+        },
+        metadata: {
+          tool: "grok-cli",
+          filesAffected: files,
+          operationSize: this.determineOperationSize(files, rollbackData),
+          ...metadata
+        }
+      };
+      if (this.currentPosition < this.history.length - 1) {
+        this.history = this.history.slice(0, this.currentPosition + 1);
+      }
+      this.history.push(entry);
+      this.currentPosition = this.history.length - 1;
+      if (this.history.length > this.options.maxEntries) {
+        this.history = this.history.slice(-this.options.maxEntries);
+        this.currentPosition = this.history.length - 1;
+      }
+      await this.saveHistory();
+      return {
+        success: true,
+        output: `Operation recorded: ${description} (ID: ${entry.id})`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error recording operation: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Undo the last operation
+   */
+  async undo() {
+    try {
+      if (this.currentPosition < 0) {
+        return {
+          success: false,
+          error: "No operations to undo"
+        };
+      }
+      const entry = this.history[this.currentPosition];
+      if (this.isDangerousOperation(entry.operation)) {
+        const sessionFlags = this.confirmationService.getSessionFlags();
+        if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+          const preview = this.generateUndoPreview(entry);
+          const confirmationResult = await this.confirmationService.requestConfirmation(
+            {
+              operation: `Undo: ${entry.description}`,
+              filename: entry.metadata.filesAffected.join(", "),
+              showVSCodeOpen: false,
+              content: preview
+            },
+            "file"
+          );
+          if (!confirmationResult.confirmed) {
+            return {
+              success: false,
+              error: confirmationResult.feedback || "Undo operation cancelled by user"
+            };
+          }
+        }
+      }
+      const result = await this.performUndo(entry);
+      if (!result.success) {
+        return result;
+      }
+      this.currentPosition--;
+      return {
+        success: true,
+        output: `Undone: ${entry.description} (${new Date(entry.timestamp).toLocaleString()})`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error during undo: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Redo the next operation
+   */
+  async redo() {
+    try {
+      if (this.currentPosition >= this.history.length - 1) {
+        return {
+          success: false,
+          error: "No operations to redo"
+        };
+      }
+      const nextPosition = this.currentPosition + 1;
+      const entry = this.history[nextPosition];
+      if (this.isDangerousOperation(entry.operation)) {
+        const sessionFlags = this.confirmationService.getSessionFlags();
+        if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+          const preview = this.generateRedoPreview(entry);
+          const confirmationResult = await this.confirmationService.requestConfirmation(
+            {
+              operation: `Redo: ${entry.description}`,
+              filename: entry.metadata.filesAffected.join(", "),
+              showVSCodeOpen: false,
+              content: preview
+            },
+            "file"
+          );
+          if (!confirmationResult.confirmed) {
+            return {
+              success: false,
+              error: confirmationResult.feedback || "Redo operation cancelled by user"
+            };
+          }
+        }
+      }
+      const result = await this.performRedo(entry);
+      if (!result.success) {
+        return result;
+      }
+      this.currentPosition = nextPosition;
+      return {
+        success: true,
+        output: `Redone: ${entry.description} (${new Date(entry.timestamp).toLocaleString()})`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error during redo: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Show operation history
+   */
+  async showHistory(limit = 10) {
+    try {
+      if (this.history.length === 0) {
+        return {
+          success: true,
+          output: "No operations in history"
+        };
+      }
+      const recentEntries = this.history.slice(-limit).reverse();
+      let output = `Operation History (last ${Math.min(limit, this.history.length)} entries):
+
+`;
+      for (const [index, entry] of recentEntries.entries()) {
+        const position = this.history.length - index;
+        const isCurrent = position - 1 === this.currentPosition;
+        const marker = isCurrent ? "\u2192 " : "  ";
+        output += `${marker}${position}. ${entry.description}
+`;
+        output += `   ${entry.operation} | ${new Date(entry.timestamp).toLocaleString()}
+`;
+        output += `   Files: ${entry.metadata.filesAffected.slice(0, 3).join(", ")}`;
+        if (entry.metadata.filesAffected.length > 3) {
+          output += ` (+${entry.metadata.filesAffected.length - 3} more)`;
+        }
+        output += `
+   ID: ${entry.id}
+
+`;
+      }
+      if (this.history.length > limit) {
+        output += `... and ${this.history.length - limit} older entries
+`;
+      }
+      output += `
+Current position: ${this.currentPosition + 1}/${this.history.length}`;
+      return {
+        success: true,
+        output: output.trim()
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error showing history: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Go to a specific point in history
+   */
+  async goToHistoryPoint(entryId) {
+    try {
+      const entryIndex = this.history.findIndex((entry) => entry.id === entryId);
+      if (entryIndex === -1) {
+        return {
+          success: false,
+          error: `Operation with ID ${entryId} not found in history`
+        };
+      }
+      const targetPosition = entryIndex;
+      if (targetPosition === this.currentPosition) {
+        return {
+          success: true,
+          output: "Already at the specified history point"
+        };
+      }
+      const operations = [];
+      if (targetPosition < this.currentPosition) {
+        for (let i = this.currentPosition; i > targetPosition; i--) {
+          const undoResult = await this.undo();
+          if (!undoResult.success) {
+            return undoResult;
+          }
+          operations.push(`Undone: ${this.history[i].description}`);
+        }
+      } else {
+        for (let i = this.currentPosition; i < targetPosition; i++) {
+          const redoResult = await this.redo();
+          if (!redoResult.success) {
+            return redoResult;
+          }
+          operations.push(`Redone: ${this.history[i + 1].description}`);
+        }
+      }
+      return {
+        success: true,
+        output: `Moved to history point ${entryId}:
+${operations.join("\n")}`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error navigating to history point: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Clear operation history
+   */
+  async clearHistory() {
+    try {
+      const sessionFlags = this.confirmationService.getSessionFlags();
+      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
+        const confirmationResult = await this.confirmationService.requestConfirmation(
+          {
+            operation: `Clear operation history (${this.history.length} entries)`,
+            filename: "operation history",
+            showVSCodeOpen: false,
+            content: `This will permanently delete all ${this.history.length} recorded operations.
+This action cannot be undone.`
+          },
+          "file"
+        );
+        if (!confirmationResult.confirmed) {
+          return {
+            success: false,
+            error: confirmationResult.feedback || "Clear history cancelled by user"
+          };
+        }
+      }
+      this.history = [];
+      this.currentPosition = -1;
+      await this.saveHistory();
+      return {
+        success: true,
+        output: "Operation history cleared"
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error clearing history: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Create snapshots of files before operation
+   */
+  async createFileSnapshots(files) {
+    const snapshots = [];
+    for (const filePath of files) {
+      try {
+        const resolvedPath = path10.resolve(filePath);
+        const exists = await pathExists4(resolvedPath);
+        const snapshot = {
+          filePath: resolvedPath,
+          existed: exists
+        };
+        if (exists) {
+          const stats = await ops9.promises.stat(resolvedPath);
+          if (stats.isFile() && this.shouldSnapshotFile(resolvedPath)) {
+            snapshot.content = await ops9.promises.readFile(resolvedPath, "utf-8");
+            snapshot.size = stats.size;
+            snapshot.lastModified = stats.mtime;
+            snapshot.permissions = stats.mode.toString(8);
+          }
+        }
+        snapshots.push(snapshot);
+      } catch (error) {
+        snapshots.push({
+          filePath: path10.resolve(filePath),
+          existed: false
+        });
+      }
+    }
+    return snapshots;
+  }
+  /**
+   * Check if file should be snapshotted (based on size and type)
+   */
+  shouldSnapshotFile(filePath) {
+    try {
+      const stats = ops9.statSync(filePath);
+      if (stats.size > 1024 * 1024) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    const ext = path10.extname(filePath).toLowerCase();
+    const binaryExtensions = [
+      ".exe",
+      ".dll",
+      ".so",
+      ".dylib",
+      ".bin",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".bmp",
+      ".ico",
+      ".mp3",
+      ".mp4",
+      ".avi",
+      ".mkv",
+      ".mov",
+      ".zip",
+      ".tar",
+      ".gz",
+      ".rar",
+      ".7z",
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx"
+    ];
+    if (binaryExtensions.includes(ext)) {
+      return false;
+    }
+    for (const pattern of this.options.excludePatterns || []) {
+      if (this.matchesPattern(filePath, pattern)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  /**
+   * Perform undo operation
+   */
+  async performUndo(entry) {
+    try {
+      const rollbackData = entry.rollbackData;
+      switch (rollbackData.type) {
+        case "file_operations":
+          return await this.undoFileOperations(rollbackData.files);
+        case "multi_file":
+          return await this.undoMultiFileOperation(rollbackData.files);
+        case "refactor":
+          return await this.undoRefactorOperation(rollbackData.files, rollbackData.customData);
+        case "search_replace":
+          return await this.undoSearchReplaceOperation(rollbackData.files);
+        default:
+          return {
+            success: false,
+            error: `Unknown rollback type: ${rollbackData.type}`
+          };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error performing undo: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Perform redo operation
+   */
+  async performRedo(entry) {
+    return {
+      success: false,
+      error: "Redo functionality requires storing forward changes - not yet implemented"
+    };
+  }
+  /**
+   * Undo file operations
+   */
+  async undoFileOperations(fileSnapshots) {
+    const restored = [];
+    const errors = [];
+    for (const snapshot of fileSnapshots) {
+      try {
+        const currentExists = await pathExists4(snapshot.filePath);
+        if (snapshot.existed && snapshot.content !== void 0) {
+          await ops9.ensureDir(path10.dirname(snapshot.filePath));
+          await ops9.promises.writeFile(snapshot.filePath, snapshot.content, "utf-8");
+          if (snapshot.permissions) {
+            await ops9.promises.chmod(snapshot.filePath, parseInt(snapshot.permissions, 8));
+          }
+          restored.push(`Restored: ${snapshot.filePath}`);
+        } else if (!snapshot.existed && currentExists) {
+          await ops9.promises.rm(snapshot.filePath);
+          restored.push(`Removed: ${snapshot.filePath}`);
+        }
+      } catch (error) {
+        errors.push(`Failed to restore ${snapshot.filePath}: ${error.message}`);
+      }
+    }
+    if (errors.length > 0 && restored.length === 0) {
+      return {
+        success: false,
+        error: `Undo failed:
+${errors.join("\n")}`
+      };
+    }
+    let output = `Undo completed:
+${restored.join("\n")}`;
+    if (errors.length > 0) {
+      output += `
+
+Warnings:
+${errors.join("\n")}`;
+    }
+    return {
+      success: true,
+      output
+    };
+  }
+  /**
+   * Undo multi-file operation
+   */
+  async undoMultiFileOperation(fileSnapshots) {
+    return await this.undoFileOperations(fileSnapshots);
+  }
+  /**
+   * Undo refactor operation
+   */
+  async undoRefactorOperation(fileSnapshots, customData) {
+    return await this.undoFileOperations(fileSnapshots);
+  }
+  /**
+   * Undo search and replace operation
+   */
+  async undoSearchReplaceOperation(fileSnapshots) {
+    return await this.undoFileOperations(fileSnapshots);
+  }
+  /**
+   * Generate undo preview
+   */
+  generateUndoPreview(entry) {
+    let preview = `Undo Preview: ${entry.description}
+`;
+    preview += `Operation: ${entry.operation}
+`;
+    preview += `Timestamp: ${new Date(entry.timestamp).toLocaleString()}
+`;
+    preview += `Files affected: ${entry.metadata.filesAffected.length}
+
+`;
+    preview += "Files to be restored:\n";
+    for (const file of entry.rollbackData.files.slice(0, 10)) {
+      if (file.existed) {
+        preview += `  - Restore: ${file.filePath}
+`;
+      } else {
+        preview += `  - Remove: ${file.filePath}
+`;
+      }
+    }
+    if (entry.rollbackData.files.length > 10) {
+      preview += `  ... and ${entry.rollbackData.files.length - 10} more files
+`;
+    }
+    return preview;
+  }
+  /**
+   * Generate redo preview
+   */
+  generateRedoPreview(entry) {
+    let preview = `Redo Preview: ${entry.description}
+`;
+    preview += `Operation: ${entry.operation}
+`;
+    preview += `Timestamp: ${new Date(entry.timestamp).toLocaleString()}
+`;
+    preview += `Files affected: ${entry.metadata.filesAffected.length}
+
+`;
+    preview += "This will re-apply the original operation.\n";
+    preview += "Files to be modified:\n";
+    for (const filePath of entry.metadata.filesAffected.slice(0, 10)) {
+      preview += `  - ${filePath}
+`;
+    }
+    if (entry.metadata.filesAffected.length > 10) {
+      preview += `  ... and ${entry.metadata.filesAffected.length - 10} more files
+`;
+    }
+    return preview;
+  }
+  /**
+   * Check if operation is potentially dangerous
+   */
+  isDangerousOperation(operation) {
+    const dangerousOps = ["file_delete", "directory_delete", "bulk_operation"];
+    return dangerousOps.includes(operation);
+  }
+  /**
+   * Determine operation size
+   */
+  determineOperationSize(files, rollbackData) {
+    if (files.length <= 3) return "small";
+    if (files.length <= 10) return "medium";
+    return "large";
+  }
+  /**
+   * Generate unique ID
+   */
+  generateId() {
+    return `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  /**
+   * Pattern matching utility
+   */
+  matchesPattern(filePath, pattern) {
+    const regexPattern = pattern.replace(/\./g, "\\.").replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
+    const regex = new RegExp(`^${regexPattern}$`, "i");
+    return regex.test(filePath);
+  }
+  /**
+   * Clean up old entries
+   */
+  cleanupOldEntries() {
+    if (!this.options.maxAge) return;
+    const cutoffTime = Date.now() - this.options.maxAge;
+    const originalLength = this.history.length;
+    this.history = this.history.filter(
+      (entry) => entry.timestamp.getTime() > cutoffTime
+    );
+    const removedCount = originalLength - this.history.length;
+    this.currentPosition = Math.max(-1, this.currentPosition - removedCount);
+  }
+  /**
+   * Load history from file
+   */
+  async loadHistory() {
+    try {
+      if (await pathExists4(this.historyFile)) {
+        const data = await ops9.promises.readFile(this.historyFile, "utf-8");
+        const parsed = JSON.parse(data);
+        this.history = parsed.entries.map((entry) => ({
+          ...entry,
+          timestamp: new Date(entry.timestamp)
+        }));
+        this.currentPosition = parsed.currentPosition || this.history.length - 1;
+      }
+    } catch (error) {
+      this.history = [];
+      this.currentPosition = -1;
+    }
+  }
+  /**
+   * Save history to file
+   */
+  async saveHistory() {
+    try {
+      await ops9.ensureDir(path10.dirname(this.historyFile));
+      const data = {
+        entries: this.history,
+        currentPosition: this.currentPosition,
+        lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      await ops9.promises.writeFile(this.historyFile, JSON.stringify(data, null, 2), "utf-8");
+    } catch (error) {
+    }
+  }
+  /**
+   * Get current history status
+   */
+  getStatus() {
+    return {
+      totalEntries: this.history.length,
+      currentPosition: this.currentPosition,
+      canUndo: this.currentPosition >= 0,
+      canRedo: this.currentPosition < this.history.length - 1
+    };
+  }
+};
+var PlanExecutor = class extends EventEmitter {
+  constructor(config2) {
+    super();
+    this.rollbackPoints = /* @__PURE__ */ new Map();
+    this.operationHistory = new OperationHistoryTool();
+    this.config = {
+      maxSteps: 50,
+      maxDuration: 3e5,
+      allowRiskyOperations: false,
+      requireConfirmation: true,
+      autoRollbackOnFailure: true,
+      parallelExecution: false,
+      maxParallelSteps: 3,
+      ...config2
+    };
+  }
+  /**
+   * Execute a task plan
+   */
+  async executePlan(plan, toolExecutor) {
+    plan.status = "executing";
+    plan.startedAt = Date.now();
+    const startTime = Date.now();
+    let completedSteps = 0;
+    let failedSteps = 0;
+    try {
+      const executionOrder = this.determineExecutionOrder(plan.steps);
+      for (let i = 0; i < executionOrder.length; i++) {
+        const step = executionOrder[i];
+        this.emitProgress(plan, i, executionOrder.length, completedSteps, failedSteps, startTime);
+        await this.createRollbackPoint(step);
+        const result = await this.executeStep(step, toolExecutor);
+        if (result.success) {
+          step.status = "completed";
+          step.result = result.output;
+          completedSteps++;
+          await this.recordOperation(step, result);
+        } else {
+          step.status = "failed";
+          step.error = result.error;
+          failedSteps++;
+          if (this.config.autoRollbackOnFailure) {
+            await this.rollbackPlan(plan, i);
+            plan.status = "rolled_back";
+            return false;
+          } else {
+            plan.status = "failed";
+            return false;
+          }
+        }
+      }
+      plan.status = "completed";
+      plan.completedAt = Date.now();
+      return true;
+    } catch (error) {
+      plan.status = "failed";
+      if (this.config.autoRollbackOnFailure) {
+        await this.rollbackPlan(plan, plan.steps.length);
+        plan.status = "rolled_back";
+      }
+      throw error;
+    }
+  }
+  /**
+   * Execute a single step
+   */
+  async executeStep(step, toolExecutor) {
+    step.status = "running";
+    step.startTime = Date.now();
+    try {
+      const output = await toolExecutor(step.tool, step.args);
+      step.endTime = Date.now();
+      const duration = step.endTime - step.startTime;
+      return {
+        stepId: step.id,
+        success: true,
+        output,
+        duration,
+        filesModified: this.extractModifiedFiles(output)
+      };
+    } catch (error) {
+      step.endTime = Date.now();
+      const duration = step.endTime - step.startTime;
+      return {
+        stepId: step.id,
+        success: false,
+        error: error.message,
+        duration,
+        filesModified: []
+      };
+    }
+  }
+  /**
+   * Determine execution order based on dependencies
+   */
+  determineExecutionOrder(steps) {
+    const ordered = [];
+    const completed = /* @__PURE__ */ new Set();
+    const remaining = [...steps];
+    while (remaining.length > 0) {
+      const canExecute = remaining.filter(
+        (step) => step.dependencies.every((depId) => completed.has(depId))
+      );
+      if (canExecute.length === 0) {
+        throw new Error("Circular dependency detected or invalid dependencies");
+      }
+      for (const step of canExecute) {
+        ordered.push(step);
+        completed.add(step.id);
+        remaining.splice(remaining.indexOf(step), 1);
+      }
+    }
+    return ordered;
+  }
+  /**
+   * Create rollback point before step execution
+   */
+  async createRollbackPoint(step) {
+    const fileSnapshots = /* @__PURE__ */ new Map();
+    const affectedFiles = this.getAffectedFiles(step);
+    for (const filePath of affectedFiles) {
+      try {
+        if (fs.existsSync(filePath)) {
+          const content = await fs.promises.readFile(filePath, "utf-8");
+          fileSnapshots.set(filePath, content);
+        }
+      } catch (error) {
+      }
+    }
+    this.rollbackPoints.set(step.id, {
+      stepId: step.id,
+      timestamp: Date.now(),
+      fileSnapshots,
+      metadata: { ...step.args }
+    });
+  }
+  /**
+   * Rollback plan to a specific step
+   */
+  async rollbackPlan(plan, failedStepIndex) {
+    for (let i = failedStepIndex - 1; i >= 0; i--) {
+      const step = plan.steps[i];
+      const rollbackPoint = this.rollbackPoints.get(step.id);
+      if (rollbackPoint) {
+        await this.rollbackStep(rollbackPoint);
+        step.status = "rolled_back";
+      }
+    }
+    this.rollbackPoints.clear();
+  }
+  /**
+   * Rollback a single step
+   */
+  async rollbackStep(rollbackPoint) {
+    for (const [filePath, content] of rollbackPoint.fileSnapshots) {
+      try {
+        await fs.promises.writeFile(filePath, content, "utf-8");
+      } catch (error) {
+        console.error(`Failed to rollback file ${filePath}:`, error);
+      }
+    }
+  }
+  /**
+   * Record operation in history
+   */
+  async recordOperation(step, result) {
+    const operationTypeMap = {
+      "create": "file_create",
+      "edit": "file_edit",
+      "delete": "file_delete",
+      "move": "file_move",
+      "rename": "file_rename",
+      "refactor": "refactor",
+      "analyze": "bulk_operation",
+      "validate": "bulk_operation",
+      "test": "bulk_operation"
+    };
+    const operationType = operationTypeMap[step.type] || "bulk_operation";
+    await this.operationHistory.recordOperation(
+      operationType,
+      step.description,
+      result.filesModified,
+      {
+        type: "file_operations",
+        files: result.filesModified.map((f) => ({
+          filePath: f,
+          existed: true,
+          content: ""
+        }))
+      },
+      {
+        tool: step.tool,
+        sessionId: step.id,
+        estimatedTime: result.duration
+      }
+    );
+  }
+  /**
+   * Emit progress event
+   */
+  emitProgress(plan, currentIndex, totalSteps, completedSteps, failedSteps, startTime) {
+    const elapsedTime = Date.now() - startTime;
+    const avgTimePerStep = completedSteps > 0 ? elapsedTime / completedSteps : 0;
+    const remainingSteps = totalSteps - currentIndex;
+    const estimatedTimeRemaining = avgTimePerStep * remainingSteps;
+    const progress = {
+      planId: plan.id,
+      currentStep: currentIndex + 1,
+      totalSteps,
+      completedSteps,
+      failedSteps,
+      skippedSteps: 0,
+      elapsedTime,
+      estimatedTimeRemaining,
+      currentStepDescription: plan.steps[currentIndex]?.description || ""
+    };
+    this.emit("progress", progress);
+  }
+  /**
+   * Get files affected by a step
+   */
+  getAffectedFiles(step) {
+    const files = [];
+    if (step.args.filePath) files.push(step.args.filePath);
+    if (step.args.files) files.push(...step.args.files);
+    if (step.args.targetFile) files.push(step.args.targetFile);
+    if (step.args.sourceFile) files.push(step.args.sourceFile);
+    return files;
+  }
+  /**
+   * Extract modified files from tool output
+   */
+  extractModifiedFiles(output) {
+    const files = [];
+    if (typeof output === "object" && output !== null) {
+      if (output.filesModified) files.push(...output.filesModified);
+      if (output.filePath) files.push(output.filePath);
+      if (output.files) files.push(...output.files);
+    }
+    return files;
+  }
+  /**
+   * Get execution statistics
+   */
+  getStatistics(plan) {
+    const completedSteps = plan.steps.filter((s) => s.status === "completed").length;
+    const failedSteps = plan.steps.filter((s) => s.status === "failed").length;
+    const totalDuration = plan.completedAt ? plan.completedAt - (plan.startedAt || 0) : 0;
+    const stepsWithDuration = plan.steps.filter((s) => s.startTime && s.endTime);
+    const averageStepDuration = stepsWithDuration.length > 0 ? stepsWithDuration.reduce((sum, s) => sum + ((s.endTime || 0) - (s.startTime || 0)), 0) / stepsWithDuration.length : 0;
+    return {
+      totalSteps: plan.steps.length,
+      completedSteps,
+      failedSteps,
+      totalDuration,
+      averageStepDuration
+    };
+  }
+};
+var TaskOrchestrator = class extends EventEmitter {
+  constructor(rootPath, config2) {
+    super();
+    this.rootPath = rootPath;
+    this.config = {
+      maxSteps: 50,
+      maxDuration: 3e5,
+      allowRiskyOperations: false,
+      requireConfirmation: true,
+      autoRollbackOnFailure: true,
+      parallelExecution: false,
+      maxParallelSteps: 3,
+      ...config2
+    };
+    this.analyzer = new TaskAnalyzer(rootPath);
+    this.planner = new TaskPlanner(rootPath, this.config);
+    this.riskAssessor = new RiskAssessor(rootPath);
+    this.executor = new PlanExecutor(this.config);
+    this.executor.on("progress", (progress) => {
+      this.emit("progress", progress);
+    });
+  }
+  /**
+   * Plan and execute a task from user request
+   */
+  async planAndExecute(userRequest, toolExecutor, context) {
+    const startTime = Date.now();
+    try {
+      this.emit("phase", { phase: "analyzing", message: "Analyzing request..." });
+      const analysis = await this.analyzer.analyzeRequest(userRequest, context);
+      this.emit("analysis", analysis);
+      this.emit("phase", { phase: "planning", message: "Creating execution plan..." });
+      const plan = await this.planner.createPlan(userRequest, context);
+      this.emit("plan", plan);
+      this.emit("phase", { phase: "validating", message: "Validating plan..." });
+      const validation = await this.planner.validatePlan(plan);
+      this.emit("validation", validation);
+      if (!validation.isValid) {
+        return {
+          success: false,
+          plan,
+          validation,
+          analysis,
+          error: `Plan validation failed: ${validation.errors.join(", ")}`
+        };
+      }
+      if (this.config.requireConfirmation && (plan.overallRiskLevel === "high" || plan.overallRiskLevel === "critical")) {
+        this.emit("confirmation_required", { plan, validation });
+      }
+      this.emit("phase", { phase: "executing", message: "Executing plan..." });
+      plan.status = "validated";
+      const success = await this.executor.executePlan(plan, toolExecutor);
+      const executionTime = Date.now() - startTime;
+      return {
+        success,
+        plan,
+        validation,
+        analysis,
+        executionTime
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      return {
+        success: false,
+        plan: {},
+        validation: { isValid: false, errors: [error.message], warnings: [], suggestions: [], estimatedSuccessRate: 0 },
+        analysis: {},
+        executionTime,
+        error: error.message
+      };
+    }
+  }
+  /**
+   * Create a plan without executing it
+   */
+  async createPlan(userRequest, context) {
+    const analysis = await this.analyzer.analyzeRequest(userRequest, context);
+    const plan = await this.planner.createPlan(userRequest, context);
+    const validation = await this.planner.validatePlan(plan);
+    return { plan, validation, analysis };
+  }
+  /**
+   * Execute an existing plan
+   */
+  async executePlan(plan, toolExecutor) {
+    return await this.executor.executePlan(plan, toolExecutor);
+  }
+  /**
+   * Get plan preview as formatted string
+   */
+  formatPlanPreview(plan, validation) {
+    let output = "";
+    output += `
+\u{1F4CB} Task Plan: ${plan.userIntent}
+`;
+    output += `${"=".repeat(60)}
+
+`;
+    output += `Description: ${plan.description}
+`;
+    output += `Total Steps: ${plan.steps.length}
+`;
+    output += `Estimated Duration: ${Math.round(plan.totalEstimatedDuration / 1e3)}s
+`;
+    output += `Risk Level: ${this.formatRiskLevel(plan.overallRiskLevel)}
+`;
+    output += `Files Affected: ${plan.metadata.filesAffected.length}
+
+`;
+    output += `Steps:
+`;
+    output += `${"-".repeat(60)}
+`;
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      output += `${i + 1}. [${step.type.toUpperCase()}] ${step.description}
+`;
+      output += `   Tool: ${step.tool}
+`;
+      output += `   Risk: ${this.formatRiskLevel(step.riskLevel)}
+`;
+      output += `   Duration: ~${Math.round(step.estimatedDuration / 1e3)}s
+`;
+      if (step.dependencies.length > 0) {
+        output += `   Dependencies: ${step.dependencies.join(", ")}
+`;
+      }
+      output += `
+`;
+    }
+    output += `
+Validation:
+`;
+    output += `${"-".repeat(60)}
+`;
+    output += `Valid: ${validation.isValid ? "\u2705 Yes" : "\u274C No"}
+`;
+    output += `Success Rate: ${validation.estimatedSuccessRate}%
+`;
+    if (validation.errors.length > 0) {
+      output += `
+\u274C Errors:
+`;
+      validation.errors.forEach((err) => output += `  - ${err}
+`);
+    }
+    if (validation.warnings.length > 0) {
+      output += `
+\u26A0\uFE0F  Warnings:
+`;
+      validation.warnings.forEach((warn) => output += `  - ${warn}
+`);
+    }
+    if (validation.suggestions.length > 0) {
+      output += `
+\u{1F4A1} Suggestions:
+`;
+      validation.suggestions.forEach((sug) => output += `  - ${sug}
+`);
+    }
+    return output;
+  }
+  /**
+   * Format risk level with emoji
+   */
+  formatRiskLevel(level) {
+    const icons = {
+      "low": "\u{1F7E2} Low",
+      "medium": "\u{1F7E1} Medium",
+      "high": "\u{1F7E0} High",
+      "critical": "\u{1F534} Critical"
+    };
+    return icons[level] || level;
+  }
+  /**
+   * Format progress update
+   */
+  formatProgress(progress) {
+    const percentage = Math.round(progress.completedSteps / progress.totalSteps * 100);
+    const bar = this.createProgressBar(percentage);
+    let output = `
+\u{1F4CA} Progress: ${progress.completedSteps}/${progress.totalSteps} steps (${percentage}%)
+`;
+    output += `${bar}
+`;
+    output += `Current: ${progress.currentStepDescription}
+`;
+    output += `Elapsed: ${Math.round(progress.elapsedTime / 1e3)}s
+`;
+    output += `Remaining: ~${Math.round(progress.estimatedTimeRemaining / 1e3)}s
+`;
+    if (progress.failedSteps > 0) {
+      output += `\u274C Failed: ${progress.failedSteps}
+`;
+    }
+    return output;
+  }
+  /**
+   * Create progress bar
+   */
+  createProgressBar(percentage, width = 40) {
+    const filled = Math.round(percentage / 100 * width);
+    const empty = width - filled;
+    return `[${"\u2588".repeat(filled)}${" ".repeat(empty)}] ${percentage}%`;
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Update configuration
+   */
+  updateConfig(config2) {
+    this.config = { ...this.config, ...config2 };
+    this.planner = new TaskPlanner(this.rootPath, this.config);
+    this.executor = new PlanExecutor(this.config);
+  }
+};
+
+// src/tools/task-planner-tool.ts
+var TaskPlannerTool = class {
+  constructor(rootPath = process.cwd()) {
+    this.orchestrator = new TaskOrchestrator(rootPath, {
+      maxSteps: 50,
+      maxDuration: 3e5,
+      allowRiskyOperations: false,
+      requireConfirmation: true,
+      autoRollbackOnFailure: true,
+      parallelExecution: false,
+      maxParallelSteps: 3
+    });
+  }
+  /**
+   * Execute task planner operations
+   */
+  async execute(args) {
+    try {
+      const { operation, userRequest, currentDirectory, allowRisky, autoRollback } = args;
+      if (allowRisky !== void 0 || autoRollback !== void 0) {
+        const config2 = this.orchestrator.getConfig();
+        this.orchestrator.updateConfig({
+          ...config2,
+          allowRiskyOperations: allowRisky ?? config2.allowRiskyOperations,
+          autoRollbackOnFailure: autoRollback ?? config2.autoRollbackOnFailure
+        });
+      }
+      switch (operation) {
+        case "create_plan":
+          return await this.createPlan(userRequest, currentDirectory);
+        case "preview_plan":
+          return await this.previewPlan(userRequest, currentDirectory);
+        case "validate_plan":
+          return await this.validatePlan(userRequest, currentDirectory);
+        default:
+          return {
+            success: false,
+            error: `Unknown operation: ${operation}`
+          };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Task planner error: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Create a plan from user request
+   */
+  async createPlan(userRequest, currentDirectory) {
+    const { plan, validation, analysis } = await this.orchestrator.createPlan(
+      userRequest,
+      { currentDirectory }
+    );
+    const preview = this.orchestrator.formatPlanPreview(plan, validation);
+    return {
+      success: true,
+      output: JSON.stringify({
+        plan: {
+          id: plan.id,
+          description: plan.description,
+          steps: plan.steps.map((s) => ({
+            id: s.id,
+            type: s.type,
+            description: s.description,
+            tool: s.tool,
+            riskLevel: s.riskLevel,
+            estimatedDuration: s.estimatedDuration
+          })),
+          totalSteps: plan.steps.length,
+          estimatedDuration: plan.totalEstimatedDuration,
+          riskLevel: plan.overallRiskLevel,
+          filesAffected: plan.metadata.filesAffected.length
+        },
+        validation: {
+          isValid: validation.isValid,
+          errors: validation.errors,
+          warnings: validation.warnings,
+          suggestions: validation.suggestions,
+          successRate: validation.estimatedSuccessRate
+        },
+        analysis: {
+          intent: analysis.intent,
+          complexity: analysis.complexity,
+          estimatedSteps: analysis.estimatedSteps,
+          potentialRisks: analysis.potentialRisks
+        },
+        preview
+      }, null, 2)
+    };
+  }
+  /**
+   * Preview a plan with formatted output
+   */
+  async previewPlan(userRequest, currentDirectory) {
+    const { plan, validation } = await this.orchestrator.createPlan(
+      userRequest,
+      { currentDirectory }
+    );
+    const preview = this.orchestrator.formatPlanPreview(plan, validation);
+    return {
+      success: true,
+      output: preview
+    };
+  }
+  /**
+   * Validate a plan
+   */
+  async validatePlan(userRequest, currentDirectory) {
+    const { plan, validation } = await this.orchestrator.createPlan(
+      userRequest,
+      { currentDirectory }
+    );
+    let output = `
+\u2705 Plan Validation Results
+`;
+    output += `${"=".repeat(60)}
+
+`;
+    output += `Valid: ${validation.isValid ? "\u2705 Yes" : "\u274C No"}
+`;
+    output += `Success Rate: ${validation.estimatedSuccessRate}%
+`;
+    output += `Risk Level: ${plan.overallRiskLevel}
+
+`;
+    if (validation.errors.length > 0) {
+      output += `\u274C Errors (${validation.errors.length}):
+`;
+      validation.errors.forEach((err, i) => output += `  ${i + 1}. ${err}
+`);
+      output += `
+`;
+    }
+    if (validation.warnings.length > 0) {
+      output += `\u26A0\uFE0F  Warnings (${validation.warnings.length}):
+`;
+      validation.warnings.forEach((warn, i) => output += `  ${i + 1}. ${warn}
+`);
+      output += `
+`;
+    }
+    if (validation.suggestions.length > 0) {
+      output += `\u{1F4A1} Suggestions (${validation.suggestions.length}):
+`;
+      validation.suggestions.forEach((sug, i) => output += `  ${i + 1}. ${sug}
+`);
+      output += `
+`;
+    }
+    return {
+      success: validation.isValid,
+      output
+    };
+  }
+  /**
+   * Get the orchestrator instance for direct use
+   */
+  getOrchestrator() {
+    return this.orchestrator;
+  }
+};
+var pathExists5 = async (filePath) => {
+  try {
+    await ops9.promises.access(filePath, ops9.constants.F_OK);
     return true;
   } catch {
     return false;
@@ -3089,10 +6544,10 @@ ${results.join("\n")}`
    */
   async validateOperation(operation) {
     try {
-      const resolvedPath = path7.resolve(operation.filePath);
+      const resolvedPath = path10.resolve(operation.filePath);
       switch (operation.type) {
         case "create":
-          if (await pathExists3(resolvedPath)) {
+          if (await pathExists5(resolvedPath)) {
             return { valid: false, error: "File already exists" };
           }
           if (!operation.content) {
@@ -3100,7 +6555,7 @@ ${results.join("\n")}`
           }
           break;
         case "edit":
-          if (!await pathExists3(resolvedPath)) {
+          if (!await pathExists5(resolvedPath)) {
             return { valid: false, error: "File does not exist" };
           }
           if (!operation.operations || operation.operations.length === 0) {
@@ -3108,20 +6563,20 @@ ${results.join("\n")}`
           }
           break;
         case "delete":
-          if (!await pathExists3(resolvedPath)) {
+          if (!await pathExists5(resolvedPath)) {
             return { valid: false, error: "File does not exist" };
           }
           break;
         case "rename":
         case "move":
-          if (!await pathExists3(resolvedPath)) {
+          if (!await pathExists5(resolvedPath)) {
             return { valid: false, error: "Source file does not exist" };
           }
           if (!operation.newFilePath) {
             return { valid: false, error: "Destination path required" };
           }
-          const newResolvedPath = path7.resolve(operation.newFilePath);
-          if (await pathExists3(newResolvedPath)) {
+          const newResolvedPath = path10.resolve(operation.newFilePath);
+          if (await pathExists5(newResolvedPath)) {
             return { valid: false, error: "Destination already exists" };
           }
           break;
@@ -3135,7 +6590,7 @@ ${results.join("\n")}`
    * Create rollback information for an operation
    */
   async createRollbackInfo(operation) {
-    const resolvedPath = path7.resolve(operation.filePath);
+    const resolvedPath = path10.resolve(operation.filePath);
     switch (operation.type) {
       case "create":
         return {
@@ -3143,15 +6598,15 @@ ${results.join("\n")}`
           filePath: operation.filePath
         };
       case "edit":
-        const originalContent = await ops6.promises.readFile(resolvedPath, "utf-8");
+        const originalContent = await ops9.promises.readFile(resolvedPath, "utf-8");
         return {
           type: "restore_content",
           filePath: operation.filePath,
           originalContent
         };
       case "delete":
-        const contentToRestore = await ops6.promises.readFile(resolvedPath, "utf-8");
-        const stats = await ops6.promises.stat(resolvedPath);
+        const contentToRestore = await ops9.promises.readFile(resolvedPath, "utf-8");
+        const stats = await ops9.promises.stat(resolvedPath);
         return {
           type: "restore_deleted",
           filePath: operation.filePath,
@@ -3173,29 +6628,29 @@ ${results.join("\n")}`
    * Execute a single operation
    */
   async executeOperation(operation) {
-    const resolvedPath = path7.resolve(operation.filePath);
+    const resolvedPath = path10.resolve(operation.filePath);
     switch (operation.type) {
       case "create":
-        const dir = path7.dirname(resolvedPath);
-        await ops6.promises.mkdir(dir, { recursive: true });
+        const dir = path10.dirname(resolvedPath);
+        await ops9.promises.mkdir(dir, { recursive: true });
         await writeFile(resolvedPath, operation.content, "utf-8");
         return { success: true, output: `Created ${operation.filePath}` };
       case "edit":
-        let content = await ops6.promises.readFile(resolvedPath, "utf-8");
+        let content = await ops9.promises.readFile(resolvedPath, "utf-8");
         for (const editOp of operation.operations) {
           content = await this.applyEditOperation(content, editOp);
         }
         await writeFile(resolvedPath, content, "utf-8");
         return { success: true, output: `Edited ${operation.filePath}` };
       case "delete":
-        await ops6.promises.rm(resolvedPath);
+        await ops9.promises.rm(resolvedPath);
         return { success: true, output: `Deleted ${operation.filePath}` };
       case "rename":
       case "move":
-        const newResolvedPath = path7.resolve(operation.newFilePath);
-        const newDir = path7.dirname(newResolvedPath);
-        await ops6.promises.mkdir(newDir, { recursive: true });
-        await ops6.move(resolvedPath, newResolvedPath);
+        const newResolvedPath = path10.resolve(operation.newFilePath);
+        const newDir = path10.dirname(newResolvedPath);
+        await ops9.promises.mkdir(newDir, { recursive: true });
+        await ops9.move(resolvedPath, newResolvedPath);
         return { success: true, output: `${operation.type === "rename" ? "Renamed" : "Moved"} ${operation.filePath} to ${operation.newFilePath}` };
       default:
         throw new Error(`Unknown operation type: ${operation.type}`);
@@ -3237,28 +6692,28 @@ ${results.join("\n")}`
       const rollback = rollbackData[i];
       switch (rollback.type) {
         case "delete_created":
-          const createdPath = path7.resolve(rollback.filePath);
-          if (await pathExists3(createdPath)) {
-            await ops6.promises.rm(createdPath);
+          const createdPath = path10.resolve(rollback.filePath);
+          if (await pathExists5(createdPath)) {
+            await ops9.promises.rm(createdPath);
           }
           break;
         case "restore_content":
-          const editedPath = path7.resolve(rollback.filePath);
+          const editedPath = path10.resolve(rollback.filePath);
           await writeFile(editedPath, rollback.originalContent, "utf-8");
           break;
         case "restore_deleted":
-          const deletedPath = path7.resolve(rollback.filePath);
-          const deletedDir = path7.dirname(deletedPath);
-          await ops6.promises.mkdir(deletedDir, { recursive: true });
+          const deletedPath = path10.resolve(rollback.filePath);
+          const deletedDir = path10.dirname(deletedPath);
+          await ops9.promises.mkdir(deletedDir, { recursive: true });
           await writeFile(deletedPath, rollback.content, "utf-8");
           break;
         case "restore_move":
-          const movedNewPath = path7.resolve(rollback.newPath);
-          const movedOldPath = path7.resolve(rollback.oldPath);
-          if (await pathExists3(movedNewPath)) {
-            const oldDir = path7.dirname(movedOldPath);
-            await ops6.promises.mkdir(oldDir, { recursive: true });
-            await ops6.move(movedNewPath, movedOldPath);
+          const movedNewPath = path10.resolve(rollback.newPath);
+          const movedOldPath = path10.resolve(rollback.oldPath);
+          if (await pathExists5(movedNewPath)) {
+            const oldDir = path10.dirname(movedOldPath);
+            await ops9.promises.mkdir(oldDir, { recursive: true });
+            await ops9.move(movedNewPath, movedOldPath);
           }
           break;
       }
@@ -3298,7 +6753,7 @@ ${results.join("\n")}`
     return this.currentTransactionId;
   }
 };
-var pathExists4 = async (filePath) => {
+var pathExists6 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
     return true;
@@ -3315,8 +6770,8 @@ var AdvancedSearchTool = class {
    */
   async search(searchPath, options) {
     try {
-      const resolvedPath = path7.resolve(searchPath);
-      if (!await pathExists4(resolvedPath)) {
+      const resolvedPath = path10.resolve(searchPath);
+      if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -3358,8 +6813,8 @@ var AdvancedSearchTool = class {
    */
   async searchAndReplace(searchPath, options) {
     try {
-      const resolvedPath = path7.resolve(searchPath);
-      if (!await pathExists4(resolvedPath)) {
+      const resolvedPath = path10.resolve(searchPath);
+      if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -3430,8 +6885,8 @@ var AdvancedSearchTool = class {
    */
   async findFiles(searchPath, pattern, options = {}) {
     try {
-      const resolvedPath = path7.resolve(searchPath);
-      if (!await pathExists4(resolvedPath)) {
+      const resolvedPath = path10.resolve(searchPath);
+      if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -3444,8 +6899,8 @@ var AdvancedSearchTool = class {
         if (options.maxResults && matchingFiles.length >= options.maxResults) {
           break;
         }
-        const fileName = path7.basename(filePath);
-        const relativePath = path7.relative(resolvedPath, filePath);
+        const fileName = path10.basename(filePath);
+        const relativePath = path10.relative(resolvedPath, filePath);
         let matches = false;
         if (regex) {
           matches = regex.test(fileName) || regex.test(relativePath);
@@ -3513,7 +6968,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
       }
     }
     return {
-      filePath: path7.relative(process.cwd(), filePath),
+      filePath: path10.relative(process.cwd(), filePath),
       matches,
       totalMatches: matches.length
     };
@@ -3537,7 +6992,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
         }
       } catch (error) {
         return {
-          filePath: path7.relative(process.cwd(), filePath),
+          filePath: path10.relative(process.cwd(), filePath),
           replacements: 0,
           success: false,
           error: `Invalid regex pattern: ${options.pattern}`
@@ -3547,21 +7002,21 @@ ${matchingFiles.join("\n")}` : "No matching files found"
       const replacementCount = matches ? matches.length : 0;
       if (replacementCount === 0) {
         return {
-          filePath: path7.relative(process.cwd(), filePath),
+          filePath: path10.relative(process.cwd(), filePath),
           replacements: 0,
           success: true
         };
       }
       const newContent = content.replace(pattern, options.replacement);
       return {
-        filePath: path7.relative(process.cwd(), filePath),
+        filePath: path10.relative(process.cwd(), filePath),
         replacements: replacementCount,
         preview: newContent,
         success: true
       };
     } catch (error) {
       return {
-        filePath: path7.relative(process.cwd(), filePath),
+        filePath: path10.relative(process.cwd(), filePath),
         replacements: 0,
         success: false,
         error: error.message
@@ -3576,7 +7031,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
     const walk = async (currentPath) => {
       const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path7.join(currentPath, entry.name);
+        const fullPath = path10.join(currentPath, entry.name);
         if (entry.isDirectory()) {
           if (this.shouldSkipDirectory(entry.name)) {
             continue;
@@ -3616,8 +7071,8 @@ ${matchingFiles.join("\n")}` : "No matching files found"
    * Check if file should be included in search
    */
   shouldIncludeFile(filePath, options) {
-    const fileName = path7.basename(filePath);
-    const ext = path7.extname(fileName);
+    const fileName = path10.basename(filePath);
+    const ext = path10.extname(fileName);
     const skipExtensions = [
       ".exe",
       ".dll",
@@ -3675,7 +7130,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
   matchesGlob(filePath, pattern) {
     const regexPattern = pattern.replace(/\./g, "\\.").replace(/\*/g, ".*").replace(/\?/g, ".");
     const regex = new RegExp(`^${regexPattern}$`, "i");
-    return regex.test(path7.basename(filePath)) || regex.test(filePath);
+    return regex.test(path10.basename(filePath)) || regex.test(filePath);
   }
   /**
    * Format search results for display
@@ -3735,9 +7190,9 @@ ${matchingFiles.join("\n")}` : "No matching files found"
     return output.trim();
   }
 };
-var pathExists5 = async (filePath) => {
+var pathExists7 = async (filePath) => {
   try {
-    await ops6.promises.access(filePath, ops6.constants.F_OK);
+    await ops9.promises.access(filePath, ops9.constants.F_OK);
     return true;
   } catch {
     return false;
@@ -3752,8 +7207,8 @@ var FileTreeOperationsTool = class {
    */
   async generateTree(rootPath, options = {}) {
     try {
-      const resolvedPath = path7.resolve(rootPath);
-      if (!await pathExists5(resolvedPath)) {
+      const resolvedPath = path10.resolve(rootPath);
+      if (!await pathExists7(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${rootPath}`
@@ -3832,15 +7287,15 @@ ${results.join("\n")}`
    */
   async copyStructure(sourcePath, destinationPath, options = {}) {
     try {
-      const resolvedSource = path7.resolve(sourcePath);
-      const resolvedDest = path7.resolve(destinationPath);
-      if (!await pathExists5(resolvedSource)) {
+      const resolvedSource = path10.resolve(sourcePath);
+      const resolvedDest = path10.resolve(destinationPath);
+      if (!await pathExists7(resolvedSource)) {
         return {
           success: false,
           error: `Source path not found: ${sourcePath}`
         };
       }
-      if (await pathExists5(resolvedDest) && !options.overwrite) {
+      if (await pathExists7(resolvedDest) && !options.overwrite) {
         return {
           success: false,
           error: `Destination already exists: ${destinationPath}`
@@ -3882,8 +7337,8 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
    */
   async organizeFiles(sourcePath, organizationType, destinationBase) {
     try {
-      const resolvedSource = path7.resolve(sourcePath);
-      if (!await pathExists5(resolvedSource)) {
+      const resolvedSource = path10.resolve(sourcePath);
+      if (!await pathExists7(resolvedSource)) {
         return {
           success: false,
           error: `Source path not found: ${sourcePath}`
@@ -3891,7 +7346,7 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
       }
       const files = await this.getFilesRecursively(resolvedSource);
       const organization = await this.categorizeFiles(files, organizationType);
-      const destBase = destinationBase ? path7.resolve(destinationBase) : resolvedSource;
+      const destBase = destinationBase ? path10.resolve(destinationBase) : resolvedSource;
       let preview = `Organization plan (${organizationType}):
 `;
       for (const [category, fileList] of Object.entries(organization)) {
@@ -3899,7 +7354,7 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
 ${category}/
 `;
         fileList.slice(0, 5).forEach((file) => {
-          preview += `  - ${path7.basename(file)}
+          preview += `  - ${path10.basename(file)}
 `;
         });
         if (fileList.length > 5) {
@@ -3927,12 +7382,12 @@ ${category}/
       }
       let movedFiles = 0;
       for (const [category, fileList] of Object.entries(organization)) {
-        const categoryDir = path7.join(destBase, category);
-        await ops6.promises.mkdir(categoryDir, { recursive: true });
+        const categoryDir = path10.join(destBase, category);
+        await ops9.promises.mkdir(categoryDir, { recursive: true });
         for (const filePath of fileList) {
-          const fileName = path7.basename(filePath);
-          const destPath = path7.join(categoryDir, fileName);
-          await ops6.move(filePath, destPath);
+          const fileName = path10.basename(filePath);
+          const destPath = path10.join(categoryDir, fileName);
+          await ops9.move(filePath, destPath);
           movedFiles++;
         }
       }
@@ -3952,8 +7407,8 @@ ${category}/
    */
   async cleanupEmptyDirectories(rootPath) {
     try {
-      const resolvedPath = path7.resolve(rootPath);
-      if (!await pathExists5(resolvedPath)) {
+      const resolvedPath = path10.resolve(rootPath);
+      if (!await pathExists7(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${rootPath}`
@@ -3969,7 +7424,7 @@ ${category}/
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
         const preview = `Empty directories to remove:
-${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
+${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
         const confirmationResult = await this.confirmationService.requestConfirmation(
           {
             operation: `Remove ${emptyDirs.length} empty directories`,
@@ -3988,7 +7443,7 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
       }
       emptyDirs.sort((a, b) => b.length - a.length);
       for (const dir of emptyDirs) {
-        await ops6.rmdir(dir);
+        await ops9.rmdir(dir);
       }
       return {
         success: true,
@@ -4005,10 +7460,10 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
    * Build tree structure recursively
    */
   async buildTreeStructure(dirPath, options, currentDepth) {
-    const stats = await ops6.promises.stat(dirPath);
-    const name = path7.basename(dirPath);
+    const stats = await ops9.promises.stat(dirPath);
+    const name = path10.basename(dirPath);
     const node = {
-      name: name || path7.basename(dirPath),
+      name: name || path10.basename(dirPath),
       path: dirPath,
       type: stats.isDirectory() ? "directory" : "file",
       size: stats.size,
@@ -4017,12 +7472,12 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
     if (stats.isDirectory() && (!options.maxDepth || currentDepth < options.maxDepth)) {
       node.children = [];
       try {
-        const entries = await ops6.promises.readdir(dirPath, { withFileTypes: true });
+        const entries = await ops9.promises.readdir(dirPath, { withFileTypes: true });
         for (const entry of entries) {
           if (!options.includeHidden && entry.name.startsWith(".")) {
             continue;
           }
-          const fullPath = path7.join(dirPath, entry.name);
+          const fullPath = path10.join(dirPath, entry.name);
           if (!this.passesFilters(fullPath, entry, options)) {
             continue;
           }
@@ -4065,7 +7520,7 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
    */
   passesFilters(fullPath, entry, options) {
     const name = entry.name;
-    const ext = path7.extname(name).toLowerCase();
+    const ext = path10.extname(name).toLowerCase();
     if (options.excludePatterns) {
       for (const pattern of options.excludePatterns) {
         if (this.matchesPattern(name, pattern)) {
@@ -4116,11 +7571,11 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
    */
   async validateBulkOperation(operation) {
     try {
-      const sourcePath = path7.resolve(operation.source);
+      const sourcePath = path10.resolve(operation.source);
       switch (operation.type) {
         case "copy":
         case "move":
-          if (!await pathExists5(sourcePath)) {
+          if (!await pathExists7(sourcePath)) {
             return { valid: false, error: "Source path does not exist" };
           }
           if (!operation.destination) {
@@ -4128,17 +7583,17 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
           }
           break;
         case "delete":
-          if (!await pathExists5(sourcePath)) {
+          if (!await pathExists7(sourcePath)) {
             return { valid: false, error: "Path does not exist" };
           }
           break;
         case "create_dir":
-          if (await pathExists5(sourcePath)) {
+          if (await pathExists7(sourcePath)) {
             return { valid: false, error: "Directory already exists" };
           }
           break;
         case "chmod":
-          if (!await pathExists5(sourcePath)) {
+          if (!await pathExists7(sourcePath)) {
             return { valid: false, error: "Path does not exist" };
           }
           if (!operation.mode) {
@@ -4146,7 +7601,7 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
           }
           break;
         case "rename":
-          if (!await pathExists5(sourcePath)) {
+          if (!await pathExists7(sourcePath)) {
             return { valid: false, error: "Source path does not exist" };
           }
           if (!operation.destination) {
@@ -4163,28 +7618,28 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
    * Execute a single bulk operation
    */
   async executeBulkOperation(operation) {
-    const sourcePath = path7.resolve(operation.source);
+    const sourcePath = path10.resolve(operation.source);
     switch (operation.type) {
       case "copy":
-        const copyDest = path7.resolve(operation.destination);
-        await ops6.copy(sourcePath, copyDest);
+        const copyDest = path10.resolve(operation.destination);
+        await ops9.copy(sourcePath, copyDest);
         return `Copied ${operation.source} to ${operation.destination}`;
       case "move":
-        const moveDest = path7.resolve(operation.destination);
-        await ops6.move(sourcePath, moveDest);
+        const moveDest = path10.resolve(operation.destination);
+        await ops9.move(sourcePath, moveDest);
         return `Moved ${operation.source} to ${operation.destination}`;
       case "delete":
-        await ops6.promises.rm(sourcePath);
+        await ops9.promises.rm(sourcePath);
         return `Deleted ${operation.source}`;
       case "create_dir":
-        await ops6.promises.mkdir(sourcePath, { recursive: true });
+        await ops9.promises.mkdir(sourcePath, { recursive: true });
         return `Created directory ${operation.source}`;
       case "chmod":
-        await ops6.promises.chmod(sourcePath, operation.mode);
+        await ops9.promises.chmod(sourcePath, operation.mode);
         return `Changed permissions of ${operation.source} to ${operation.mode}`;
       case "rename":
-        const renameDest = path7.resolve(operation.destination);
-        await ops6.move(sourcePath, renameDest);
+        const renameDest = path10.resolve(operation.destination);
+        await ops9.move(sourcePath, renameDest);
         return `Renamed ${operation.source} to ${operation.destination}`;
       default:
         throw new Error(`Unknown operation type: ${operation.type}`);
@@ -4213,17 +7668,17 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
    * Copy structure recursively
    */
   async copyStructureRecursive(source, destination, options) {
-    const stats = await ops6.promises.stat(source);
+    const stats = await ops9.promises.stat(source);
     if (stats.isDirectory()) {
-      await ops6.promises.mkdir(destination, { recursive: true });
-      const entries = await ops6.promises.readdir(source);
+      await ops9.promises.mkdir(destination, { recursive: true });
+      const entries = await ops9.promises.readdir(source);
       for (const entry of entries) {
-        const srcPath = path7.join(source, entry);
-        const destPath = path7.join(destination, entry);
+        const srcPath = path10.join(source, entry);
+        const destPath = path10.join(destination, entry);
         await this.copyStructureRecursive(srcPath, destPath, options);
       }
     } else if (options.includeFiles) {
-      await ops6.copy(source, destination, { overwrite: options.overwrite });
+      await ops9.copy(source, destination, { overwrite: options.overwrite });
     }
   }
   /**
@@ -4232,9 +7687,9 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
   async getFilesRecursively(dirPath) {
     const files = [];
     const walk = async (currentPath) => {
-      const entries = await ops6.promises.readdir(currentPath, { withFileTypes: true });
+      const entries = await ops9.promises.readdir(currentPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path7.join(currentPath, entry.name);
+        const fullPath = path10.join(currentPath, entry.name);
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isFile()) {
@@ -4254,18 +7709,18 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
       let category;
       switch (organizationType) {
         case "type":
-          const ext = path7.extname(filePath).toLowerCase();
+          const ext = path10.extname(filePath).toLowerCase();
           category = ext || "no-extension";
           break;
         case "size":
-          const stats = await ops6.promises.stat(filePath);
+          const stats = await ops9.promises.stat(filePath);
           if (stats.size < 1024) category = "small (< 1KB)";
           else if (stats.size < 1024 * 1024) category = "medium (< 1MB)";
           else if (stats.size < 1024 * 1024 * 10) category = "large (< 10MB)";
           else category = "very-large (> 10MB)";
           break;
         case "date":
-          const fileStats = await ops6.promises.stat(filePath);
+          const fileStats = await ops9.promises.stat(filePath);
           const year = fileStats.mtime.getFullYear();
           const month = fileStats.mtime.getMonth() + 1;
           category = `${year}-${month.toString().padStart(2, "0")}`;
@@ -4287,15 +7742,15 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
     const emptyDirs = [];
     const checkDirectory = async (currentPath) => {
       try {
-        const entries = await ops6.promises.readdir(currentPath);
+        const entries = await ops9.promises.readdir(currentPath);
         if (entries.length === 0) {
           emptyDirs.push(currentPath);
           return true;
         }
         let hasNonEmptyChildren = false;
         for (const entry of entries) {
-          const fullPath = path7.join(currentPath, entry);
-          const stats = await ops6.promises.stat(fullPath);
+          const fullPath = path10.join(currentPath, entry);
+          const stats = await ops9.promises.stat(fullPath);
           if (stats.isDirectory()) {
             const isEmpty = await checkDirectory(fullPath);
             if (!isEmpty) {
@@ -4318,7 +7773,7 @@ ${emptyDirs.map((dir) => `- ${path7.relative(rootPath, dir)}`).join("\n")}`;
     return emptyDirs;
   }
 };
-var pathExists6 = async (filePath) => {
+var pathExists8 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
     return true;
@@ -4335,8 +7790,8 @@ var CodeAwareEditorTool = class {
    */
   async analyzeCode(filePath) {
     try {
-      const resolvedPath = path7.resolve(filePath);
-      if (!await pathExists6(resolvedPath)) {
+      const resolvedPath = path10.resolve(filePath);
+      if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${filePath}`
@@ -4362,8 +7817,8 @@ var CodeAwareEditorTool = class {
    */
   async refactor(filePath, operation) {
     try {
-      const resolvedPath = path7.resolve(filePath);
-      if (!await pathExists6(resolvedPath)) {
+      const resolvedPath = path10.resolve(filePath);
+      if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${filePath}`
@@ -4412,8 +7867,8 @@ var CodeAwareEditorTool = class {
    */
   async smartInsert(filePath, code, location, target) {
     try {
-      const resolvedPath = path7.resolve(filePath);
-      if (!await pathExists6(resolvedPath)) {
+      const resolvedPath = path10.resolve(filePath);
+      if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${filePath}`
@@ -4466,8 +7921,8 @@ var CodeAwareEditorTool = class {
    */
   async formatCode(filePath, options = {}) {
     try {
-      const resolvedPath = path7.resolve(filePath);
-      if (!await pathExists6(resolvedPath)) {
+      const resolvedPath = path10.resolve(filePath);
+      if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${filePath}`
@@ -4518,8 +7973,8 @@ var CodeAwareEditorTool = class {
    */
   async addMissingImports(filePath, symbols) {
     try {
-      const resolvedPath = path7.resolve(filePath);
-      if (!await pathExists6(resolvedPath)) {
+      const resolvedPath = path10.resolve(filePath);
+      if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${filePath}`
@@ -4582,7 +8037,7 @@ ${importsToAdd.join("\n")}`;
    * Detect programming language from file extension
    */
   detectLanguage(filePath) {
-    const ext = path7.extname(filePath).toLowerCase();
+    const ext = path10.extname(filePath).toLowerCase();
     const languageMap = {
       ".js": "javascript",
       ".jsx": "javascript",
@@ -5261,636 +8716,6 @@ ${extractedCode}`;
     return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
   }
 };
-var pathExists7 = async (filePath) => {
-  try {
-    await ops6.promises.access(filePath, ops6.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-var OperationHistoryTool = class {
-  constructor(options = {}) {
-    this.history = [];
-    this.confirmationService = ConfirmationService.getInstance();
-    this.currentPosition = -1;
-    this.options = {
-      maxEntries: 100,
-      maxAge: 7 * 24 * 60 * 60 * 1e3,
-      // 7 days
-      excludePatterns: ["node_modules/**", ".git/**", "dist/**", "build/**"],
-      autoCleanup: true,
-      ...options
-    };
-    const homeDir = process.env.HOME || process.env.USERPROFILE || "";
-    this.historyFile = path7.join(homeDir, ".grok", "operation-history.json");
-    this.loadHistory();
-    if (this.options.autoCleanup) {
-      this.cleanupOldEntries();
-    }
-  }
-  /**
-   * Record a new operation in history
-   */
-  async recordOperation(operation, description, files, rollbackData, metadata = {}) {
-    try {
-      const fileSnapshots = await this.createFileSnapshots(files);
-      const entry = {
-        id: this.generateId(),
-        timestamp: /* @__PURE__ */ new Date(),
-        operation,
-        description,
-        rollbackData: {
-          ...rollbackData,
-          files: fileSnapshots
-        },
-        metadata: {
-          tool: "grok-cli",
-          filesAffected: files,
-          operationSize: this.determineOperationSize(files, rollbackData),
-          ...metadata
-        }
-      };
-      if (this.currentPosition < this.history.length - 1) {
-        this.history = this.history.slice(0, this.currentPosition + 1);
-      }
-      this.history.push(entry);
-      this.currentPosition = this.history.length - 1;
-      if (this.history.length > this.options.maxEntries) {
-        this.history = this.history.slice(-this.options.maxEntries);
-        this.currentPosition = this.history.length - 1;
-      }
-      await this.saveHistory();
-      return {
-        success: true,
-        output: `Operation recorded: ${description} (ID: ${entry.id})`
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error recording operation: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Undo the last operation
-   */
-  async undo() {
-    try {
-      if (this.currentPosition < 0) {
-        return {
-          success: false,
-          error: "No operations to undo"
-        };
-      }
-      const entry = this.history[this.currentPosition];
-      if (this.isDangerousOperation(entry.operation)) {
-        const sessionFlags = this.confirmationService.getSessionFlags();
-        if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-          const preview = this.generateUndoPreview(entry);
-          const confirmationResult = await this.confirmationService.requestConfirmation(
-            {
-              operation: `Undo: ${entry.description}`,
-              filename: entry.metadata.filesAffected.join(", "),
-              showVSCodeOpen: false,
-              content: preview
-            },
-            "file"
-          );
-          if (!confirmationResult.confirmed) {
-            return {
-              success: false,
-              error: confirmationResult.feedback || "Undo operation cancelled by user"
-            };
-          }
-        }
-      }
-      const result = await this.performUndo(entry);
-      if (!result.success) {
-        return result;
-      }
-      this.currentPosition--;
-      return {
-        success: true,
-        output: `Undone: ${entry.description} (${new Date(entry.timestamp).toLocaleString()})`
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error during undo: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Redo the next operation
-   */
-  async redo() {
-    try {
-      if (this.currentPosition >= this.history.length - 1) {
-        return {
-          success: false,
-          error: "No operations to redo"
-        };
-      }
-      const nextPosition = this.currentPosition + 1;
-      const entry = this.history[nextPosition];
-      if (this.isDangerousOperation(entry.operation)) {
-        const sessionFlags = this.confirmationService.getSessionFlags();
-        if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-          const preview = this.generateRedoPreview(entry);
-          const confirmationResult = await this.confirmationService.requestConfirmation(
-            {
-              operation: `Redo: ${entry.description}`,
-              filename: entry.metadata.filesAffected.join(", "),
-              showVSCodeOpen: false,
-              content: preview
-            },
-            "file"
-          );
-          if (!confirmationResult.confirmed) {
-            return {
-              success: false,
-              error: confirmationResult.feedback || "Redo operation cancelled by user"
-            };
-          }
-        }
-      }
-      const result = await this.performRedo(entry);
-      if (!result.success) {
-        return result;
-      }
-      this.currentPosition = nextPosition;
-      return {
-        success: true,
-        output: `Redone: ${entry.description} (${new Date(entry.timestamp).toLocaleString()})`
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error during redo: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Show operation history
-   */
-  async showHistory(limit = 10) {
-    try {
-      if (this.history.length === 0) {
-        return {
-          success: true,
-          output: "No operations in history"
-        };
-      }
-      const recentEntries = this.history.slice(-limit).reverse();
-      let output = `Operation History (last ${Math.min(limit, this.history.length)} entries):
-
-`;
-      for (const [index, entry] of recentEntries.entries()) {
-        const position = this.history.length - index;
-        const isCurrent = position - 1 === this.currentPosition;
-        const marker = isCurrent ? "\u2192 " : "  ";
-        output += `${marker}${position}. ${entry.description}
-`;
-        output += `   ${entry.operation} | ${new Date(entry.timestamp).toLocaleString()}
-`;
-        output += `   Files: ${entry.metadata.filesAffected.slice(0, 3).join(", ")}`;
-        if (entry.metadata.filesAffected.length > 3) {
-          output += ` (+${entry.metadata.filesAffected.length - 3} more)`;
-        }
-        output += `
-   ID: ${entry.id}
-
-`;
-      }
-      if (this.history.length > limit) {
-        output += `... and ${this.history.length - limit} older entries
-`;
-      }
-      output += `
-Current position: ${this.currentPosition + 1}/${this.history.length}`;
-      return {
-        success: true,
-        output: output.trim()
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error showing history: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Go to a specific point in history
-   */
-  async goToHistoryPoint(entryId) {
-    try {
-      const entryIndex = this.history.findIndex((entry) => entry.id === entryId);
-      if (entryIndex === -1) {
-        return {
-          success: false,
-          error: `Operation with ID ${entryId} not found in history`
-        };
-      }
-      const targetPosition = entryIndex;
-      if (targetPosition === this.currentPosition) {
-        return {
-          success: true,
-          output: "Already at the specified history point"
-        };
-      }
-      const operations = [];
-      if (targetPosition < this.currentPosition) {
-        for (let i = this.currentPosition; i > targetPosition; i--) {
-          const undoResult = await this.undo();
-          if (!undoResult.success) {
-            return undoResult;
-          }
-          operations.push(`Undone: ${this.history[i].description}`);
-        }
-      } else {
-        for (let i = this.currentPosition; i < targetPosition; i++) {
-          const redoResult = await this.redo();
-          if (!redoResult.success) {
-            return redoResult;
-          }
-          operations.push(`Redone: ${this.history[i + 1].description}`);
-        }
-      }
-      return {
-        success: true,
-        output: `Moved to history point ${entryId}:
-${operations.join("\n")}`
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error navigating to history point: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Clear operation history
-   */
-  async clearHistory() {
-    try {
-      const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-        const confirmationResult = await this.confirmationService.requestConfirmation(
-          {
-            operation: `Clear operation history (${this.history.length} entries)`,
-            filename: "operation history",
-            showVSCodeOpen: false,
-            content: `This will permanently delete all ${this.history.length} recorded operations.
-This action cannot be undone.`
-          },
-          "file"
-        );
-        if (!confirmationResult.confirmed) {
-          return {
-            success: false,
-            error: confirmationResult.feedback || "Clear history cancelled by user"
-          };
-        }
-      }
-      this.history = [];
-      this.currentPosition = -1;
-      await this.saveHistory();
-      return {
-        success: true,
-        output: "Operation history cleared"
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error clearing history: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Create snapshots of files before operation
-   */
-  async createFileSnapshots(files) {
-    const snapshots = [];
-    for (const filePath of files) {
-      try {
-        const resolvedPath = path7.resolve(filePath);
-        const exists = await pathExists7(resolvedPath);
-        const snapshot = {
-          filePath: resolvedPath,
-          existed: exists
-        };
-        if (exists) {
-          const stats = await ops6.promises.stat(resolvedPath);
-          if (stats.isFile() && this.shouldSnapshotFile(resolvedPath)) {
-            snapshot.content = await ops6.promises.readFile(resolvedPath, "utf-8");
-            snapshot.size = stats.size;
-            snapshot.lastModified = stats.mtime;
-            snapshot.permissions = stats.mode.toString(8);
-          }
-        }
-        snapshots.push(snapshot);
-      } catch (error) {
-        snapshots.push({
-          filePath: path7.resolve(filePath),
-          existed: false
-        });
-      }
-    }
-    return snapshots;
-  }
-  /**
-   * Check if file should be snapshotted (based on size and type)
-   */
-  shouldSnapshotFile(filePath) {
-    try {
-      const stats = ops6.statSync(filePath);
-      if (stats.size > 1024 * 1024) {
-        return false;
-      }
-    } catch {
-      return false;
-    }
-    const ext = path7.extname(filePath).toLowerCase();
-    const binaryExtensions = [
-      ".exe",
-      ".dll",
-      ".so",
-      ".dylib",
-      ".bin",
-      ".jpg",
-      ".jpeg",
-      ".png",
-      ".gif",
-      ".bmp",
-      ".ico",
-      ".mp3",
-      ".mp4",
-      ".avi",
-      ".mkv",
-      ".mov",
-      ".zip",
-      ".tar",
-      ".gz",
-      ".rar",
-      ".7z",
-      ".pdf",
-      ".doc",
-      ".docx",
-      ".xls",
-      ".xlsx"
-    ];
-    if (binaryExtensions.includes(ext)) {
-      return false;
-    }
-    for (const pattern of this.options.excludePatterns || []) {
-      if (this.matchesPattern(filePath, pattern)) {
-        return false;
-      }
-    }
-    return true;
-  }
-  /**
-   * Perform undo operation
-   */
-  async performUndo(entry) {
-    try {
-      const rollbackData = entry.rollbackData;
-      switch (rollbackData.type) {
-        case "file_operations":
-          return await this.undoFileOperations(rollbackData.files);
-        case "multi_file":
-          return await this.undoMultiFileOperation(rollbackData.files);
-        case "refactor":
-          return await this.undoRefactorOperation(rollbackData.files, rollbackData.customData);
-        case "search_replace":
-          return await this.undoSearchReplaceOperation(rollbackData.files);
-        default:
-          return {
-            success: false,
-            error: `Unknown rollback type: ${rollbackData.type}`
-          };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error performing undo: ${error.message}`
-      };
-    }
-  }
-  /**
-   * Perform redo operation
-   */
-  async performRedo(entry) {
-    return {
-      success: false,
-      error: "Redo functionality requires storing forward changes - not yet implemented"
-    };
-  }
-  /**
-   * Undo file operations
-   */
-  async undoFileOperations(fileSnapshots) {
-    const restored = [];
-    const errors = [];
-    for (const snapshot of fileSnapshots) {
-      try {
-        const currentExists = await pathExists7(snapshot.filePath);
-        if (snapshot.existed && snapshot.content !== void 0) {
-          await ops6.ensureDir(path7.dirname(snapshot.filePath));
-          await ops6.promises.writeFile(snapshot.filePath, snapshot.content, "utf-8");
-          if (snapshot.permissions) {
-            await ops6.promises.chmod(snapshot.filePath, parseInt(snapshot.permissions, 8));
-          }
-          restored.push(`Restored: ${snapshot.filePath}`);
-        } else if (!snapshot.existed && currentExists) {
-          await ops6.promises.rm(snapshot.filePath);
-          restored.push(`Removed: ${snapshot.filePath}`);
-        }
-      } catch (error) {
-        errors.push(`Failed to restore ${snapshot.filePath}: ${error.message}`);
-      }
-    }
-    if (errors.length > 0 && restored.length === 0) {
-      return {
-        success: false,
-        error: `Undo failed:
-${errors.join("\n")}`
-      };
-    }
-    let output = `Undo completed:
-${restored.join("\n")}`;
-    if (errors.length > 0) {
-      output += `
-
-Warnings:
-${errors.join("\n")}`;
-    }
-    return {
-      success: true,
-      output
-    };
-  }
-  /**
-   * Undo multi-file operation
-   */
-  async undoMultiFileOperation(fileSnapshots) {
-    return await this.undoFileOperations(fileSnapshots);
-  }
-  /**
-   * Undo refactor operation
-   */
-  async undoRefactorOperation(fileSnapshots, customData) {
-    return await this.undoFileOperations(fileSnapshots);
-  }
-  /**
-   * Undo search and replace operation
-   */
-  async undoSearchReplaceOperation(fileSnapshots) {
-    return await this.undoFileOperations(fileSnapshots);
-  }
-  /**
-   * Generate undo preview
-   */
-  generateUndoPreview(entry) {
-    let preview = `Undo Preview: ${entry.description}
-`;
-    preview += `Operation: ${entry.operation}
-`;
-    preview += `Timestamp: ${new Date(entry.timestamp).toLocaleString()}
-`;
-    preview += `Files affected: ${entry.metadata.filesAffected.length}
-
-`;
-    preview += "Files to be restored:\n";
-    for (const file of entry.rollbackData.files.slice(0, 10)) {
-      if (file.existed) {
-        preview += `  - Restore: ${file.filePath}
-`;
-      } else {
-        preview += `  - Remove: ${file.filePath}
-`;
-      }
-    }
-    if (entry.rollbackData.files.length > 10) {
-      preview += `  ... and ${entry.rollbackData.files.length - 10} more files
-`;
-    }
-    return preview;
-  }
-  /**
-   * Generate redo preview
-   */
-  generateRedoPreview(entry) {
-    let preview = `Redo Preview: ${entry.description}
-`;
-    preview += `Operation: ${entry.operation}
-`;
-    preview += `Timestamp: ${new Date(entry.timestamp).toLocaleString()}
-`;
-    preview += `Files affected: ${entry.metadata.filesAffected.length}
-
-`;
-    preview += "This will re-apply the original operation.\n";
-    preview += "Files to be modified:\n";
-    for (const filePath of entry.metadata.filesAffected.slice(0, 10)) {
-      preview += `  - ${filePath}
-`;
-    }
-    if (entry.metadata.filesAffected.length > 10) {
-      preview += `  ... and ${entry.metadata.filesAffected.length - 10} more files
-`;
-    }
-    return preview;
-  }
-  /**
-   * Check if operation is potentially dangerous
-   */
-  isDangerousOperation(operation) {
-    const dangerousOps = ["file_delete", "directory_delete", "bulk_operation"];
-    return dangerousOps.includes(operation);
-  }
-  /**
-   * Determine operation size
-   */
-  determineOperationSize(files, rollbackData) {
-    if (files.length <= 3) return "small";
-    if (files.length <= 10) return "medium";
-    return "large";
-  }
-  /**
-   * Generate unique ID
-   */
-  generateId() {
-    return `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-  /**
-   * Pattern matching utility
-   */
-  matchesPattern(filePath, pattern) {
-    const regexPattern = pattern.replace(/\./g, "\\.").replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
-    const regex = new RegExp(`^${regexPattern}$`, "i");
-    return regex.test(filePath);
-  }
-  /**
-   * Clean up old entries
-   */
-  cleanupOldEntries() {
-    if (!this.options.maxAge) return;
-    const cutoffTime = Date.now() - this.options.maxAge;
-    const originalLength = this.history.length;
-    this.history = this.history.filter(
-      (entry) => entry.timestamp.getTime() > cutoffTime
-    );
-    const removedCount = originalLength - this.history.length;
-    this.currentPosition = Math.max(-1, this.currentPosition - removedCount);
-  }
-  /**
-   * Load history from file
-   */
-  async loadHistory() {
-    try {
-      if (await pathExists7(this.historyFile)) {
-        const data = await ops6.promises.readFile(this.historyFile, "utf-8");
-        const parsed = JSON.parse(data);
-        this.history = parsed.entries.map((entry) => ({
-          ...entry,
-          timestamp: new Date(entry.timestamp)
-        }));
-        this.currentPosition = parsed.currentPosition || this.history.length - 1;
-      }
-    } catch (error) {
-      this.history = [];
-      this.currentPosition = -1;
-    }
-  }
-  /**
-   * Save history to file
-   */
-  async saveHistory() {
-    try {
-      await ops6.ensureDir(path7.dirname(this.historyFile));
-      const data = {
-        entries: this.history,
-        currentPosition: this.currentPosition,
-        lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      await ops6.promises.writeFile(this.historyFile, JSON.stringify(data, null, 2), "utf-8");
-    } catch (error) {
-    }
-  }
-  /**
-   * Get current history status
-   */
-  getStatus() {
-    return {
-      totalEntries: this.history.length,
-      currentPosition: this.currentPosition,
-      canUndo: this.currentPosition >= 0,
-      canRedo: this.currentPosition < this.history.length - 1
-    };
-  }
-};
 var SymbolSearchTool = class {
   // 5 minutes
   constructor(intelligenceEngine) {
@@ -6206,436 +9031,6 @@ var SymbolSearchTool = class {
     };
   }
 };
-var pathExists8 = async (filePath) => {
-  try {
-    await fs.promises.access(filePath, fs.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-var DependencyAnalyzerTool = class {
-  constructor(intelligenceEngine) {
-    this.name = "dependency_analyzer";
-    this.description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
-    this.intelligenceEngine = intelligenceEngine;
-  }
-  async execute(args) {
-    try {
-      const {
-        rootPath = process.cwd(),
-        filePatterns = ["**/*.{ts,tsx,js,jsx}"],
-        excludePatterns = ["**/node_modules/**", "**/dist/**", "**/.git/**"],
-        includeExternals = false,
-        detectCircular = true,
-        findUnreachable = true,
-        generateGraph = false,
-        entryPoints = [],
-        maxDepth = 50
-      } = args;
-      if (!await pathExists8(rootPath)) {
-        throw new Error(`Root path does not exist: ${rootPath}`);
-      }
-      const sourceFiles = await this.findSourceFiles(rootPath, filePatterns, excludePatterns);
-      const dependencyGraph = await this.buildDependencyGraph(
-        sourceFiles,
-        rootPath,
-        includeExternals,
-        maxDepth
-      );
-      if (detectCircular) {
-        dependencyGraph.circularDependencies = this.detectCircularDependencies(dependencyGraph);
-      }
-      if (findUnreachable) {
-        dependencyGraph.unreachableFiles = this.findUnreachableFiles(
-          dependencyGraph,
-          entryPoints.length > 0 ? entryPoints : this.inferEntryPoints(dependencyGraph)
-        );
-      }
-      dependencyGraph.statistics = this.calculateStatistics(dependencyGraph);
-      const result = {
-        rootPath,
-        totalFiles: sourceFiles.length,
-        entryPoints: dependencyGraph.entryPoints,
-        leafNodes: dependencyGraph.leafNodes,
-        statistics: dependencyGraph.statistics
-      };
-      if (detectCircular) {
-        result.circularDependencies = dependencyGraph.circularDependencies;
-      }
-      if (findUnreachable) {
-        result.unreachableFiles = dependencyGraph.unreachableFiles;
-      }
-      if (generateGraph) {
-        result.dependencyGraph = this.serializeDependencyGraph(dependencyGraph);
-      }
-      return {
-        success: true,
-        output: JSON.stringify(result, null, 2)
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-  async findSourceFiles(rootPath, filePatterns, excludePatterns) {
-    const allFiles = [];
-    for (const pattern of filePatterns) {
-      const files = await glob(pattern, {
-        cwd: rootPath,
-        absolute: true,
-        ignore: excludePatterns
-      });
-      allFiles.push(...files);
-    }
-    return [...new Set(allFiles)];
-  }
-  async buildDependencyGraph(sourceFiles, rootPath, _includeExternals, _maxDepth) {
-    const graph = {
-      nodes: /* @__PURE__ */ new Map(),
-      entryPoints: [],
-      leafNodes: [],
-      circularDependencies: [],
-      unreachableFiles: [],
-      statistics: {
-        totalFiles: 0,
-        totalDependencies: 0,
-        averageDependencies: 0,
-        maxDependencyDepth: 0,
-        circularDependencyCount: 0,
-        unreachableFileCount: 0
-      }
-    };
-    for (const filePath of sourceFiles) {
-      try {
-        const deps = this.intelligenceEngine.getDependencies(filePath);
-        const dependencies = Array.from(deps);
-        const imports = [];
-        const exports = [];
-        const node = {
-          filePath: path7__default.relative(rootPath, filePath),
-          absolutePath: filePath,
-          imports,
-          exports,
-          dependencies,
-          dependents: [],
-          isEntryPoint: false,
-          isLeaf: dependencies.length === 0,
-          circularDependencies: []
-        };
-        graph.nodes.set(filePath, node);
-      } catch (error) {
-        console.warn(`Failed to parse ${filePath}: ${error}`);
-      }
-    }
-    for (const [filePath, node] of graph.nodes) {
-      for (const dependency of node.dependencies) {
-        const depNode = graph.nodes.get(dependency);
-        if (depNode) {
-          depNode.dependents.push(filePath);
-        }
-      }
-    }
-    for (const [filePath, node] of graph.nodes) {
-      node.isEntryPoint = node.dependents.length === 0;
-      node.isLeaf = node.dependencies.length === 0;
-      if (node.isEntryPoint) {
-        graph.entryPoints.push(filePath);
-      }
-      if (node.isLeaf) {
-        graph.leafNodes.push(filePath);
-      }
-    }
-    return graph;
-  }
-  async resolveImportPaths(imports, currentFile, rootPath, includeExternals) {
-    const dependencies = [];
-    const currentDir = path7__default.dirname(currentFile);
-    for (const importInfo of imports) {
-      let resolvedPath = null;
-      if (importInfo.source.startsWith(".")) {
-        resolvedPath = await this.resolveRelativeImport(importInfo.source, currentDir);
-      } else if (importInfo.source.startsWith("/")) {
-        resolvedPath = await this.resolveAbsoluteImport(importInfo.source, rootPath);
-      } else if (includeExternals) {
-        dependencies.push(importInfo.source);
-        continue;
-      } else {
-        continue;
-      }
-      if (resolvedPath && await pathExists8(resolvedPath)) {
-        dependencies.push(resolvedPath);
-      }
-    }
-    return dependencies;
-  }
-  async resolveRelativeImport(importPath, currentDir) {
-    const basePath = path7__default.resolve(currentDir, importPath);
-    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
-    for (const ext of extensions) {
-      const fullPath = basePath + ext;
-      if (await pathExists8(fullPath)) {
-        return fullPath;
-      }
-    }
-    for (const ext of extensions) {
-      const indexPath = path7__default.join(basePath, `index${ext}`);
-      if (await pathExists8(indexPath)) {
-        return indexPath;
-      }
-    }
-    return null;
-  }
-  async resolveAbsoluteImport(importPath, rootPath) {
-    const fullPath = path7__default.join(rootPath, importPath.slice(1));
-    return await this.resolveRelativeImport(".", path7__default.dirname(fullPath));
-  }
-  detectCircularDependencies(graph) {
-    const circularDeps = [];
-    const visited = /* @__PURE__ */ new Set();
-    const visiting = /* @__PURE__ */ new Set();
-    const dfs = (filePath, path25) => {
-      if (visiting.has(filePath)) {
-        const cycleStart = path25.indexOf(filePath);
-        const cycle = path25.slice(cycleStart).concat([filePath]);
-        circularDeps.push({
-          cycle: cycle.map((fp) => graph.nodes.get(fp)?.filePath || fp),
-          severity: cycle.length <= 2 ? "error" : "warning",
-          type: cycle.length <= 2 ? "direct" : "indirect"
-        });
-        return;
-      }
-      if (visited.has(filePath)) {
-        return;
-      }
-      visiting.add(filePath);
-      const node = graph.nodes.get(filePath);
-      if (node) {
-        for (const dependency of node.dependencies) {
-          if (graph.nodes.has(dependency)) {
-            dfs(dependency, [...path25, filePath]);
-          }
-        }
-      }
-      visiting.delete(filePath);
-      visited.add(filePath);
-    };
-    for (const filePath of graph.nodes.keys()) {
-      if (!visited.has(filePath)) {
-        dfs(filePath, []);
-      }
-    }
-    return circularDeps;
-  }
-  findUnreachableFiles(graph, entryPoints) {
-    const reachable = /* @__PURE__ */ new Set();
-    const dfs = (filePath) => {
-      if (reachable.has(filePath)) {
-        return;
-      }
-      reachable.add(filePath);
-      const node = graph.nodes.get(filePath);
-      if (node) {
-        for (const dependency of node.dependencies) {
-          if (graph.nodes.has(dependency)) {
-            dfs(dependency);
-          }
-        }
-      }
-    };
-    for (const entryPoint of entryPoints) {
-      if (graph.nodes.has(entryPoint)) {
-        dfs(entryPoint);
-      }
-    }
-    const unreachable = [];
-    for (const filePath of graph.nodes.keys()) {
-      if (!reachable.has(filePath)) {
-        const node = graph.nodes.get(filePath);
-        unreachable.push(node?.filePath || filePath);
-      }
-    }
-    return unreachable;
-  }
-  inferEntryPoints(graph) {
-    if (graph.entryPoints.length > 0) {
-      return graph.entryPoints;
-    }
-    const commonEntryPatterns = [
-      /index\.(ts|js|tsx|jsx)$/,
-      /main\.(ts|js|tsx|jsx)$/,
-      /app\.(ts|js|tsx|jsx)$/,
-      /server\.(ts|js|tsx|jsx)$/
-    ];
-    const entryPoints = [];
-    for (const [filePath, node] of graph.nodes) {
-      const fileName = path7__default.basename(filePath);
-      if (node.dependents.length === 0 || commonEntryPatterns.some((pattern) => pattern.test(fileName))) {
-        entryPoints.push(filePath);
-      }
-    }
-    return entryPoints;
-  }
-  calculateStatistics(graph) {
-    const totalFiles = graph.nodes.size;
-    let totalDependencies = 0;
-    let maxDepth = 0;
-    for (const node of graph.nodes.values()) {
-      totalDependencies += node.dependencies.length;
-      const depth = this.calculateNodeDepth(node.absolutePath, graph);
-      maxDepth = Math.max(maxDepth, depth);
-    }
-    return {
-      totalFiles,
-      totalDependencies,
-      averageDependencies: totalFiles > 0 ? totalDependencies / totalFiles : 0,
-      maxDependencyDepth: maxDepth,
-      circularDependencyCount: graph.circularDependencies.length,
-      unreachableFileCount: graph.unreachableFiles.length
-    };
-  }
-  calculateNodeDepth(filePath, graph) {
-    const visited = /* @__PURE__ */ new Set();
-    const dfs = (currentPath, depth) => {
-      if (visited.has(currentPath)) {
-        return depth;
-      }
-      visited.add(currentPath);
-      const node = graph.nodes.get(currentPath);
-      if (!node || node.dependencies.length === 0) {
-        return depth;
-      }
-      let maxChildDepth = depth;
-      for (const dependency of node.dependencies) {
-        if (graph.nodes.has(dependency)) {
-          const childDepth = dfs(dependency, depth + 1);
-          maxChildDepth = Math.max(maxChildDepth, childDepth);
-        }
-      }
-      return maxChildDepth;
-    };
-    return dfs(filePath, 0);
-  }
-  serializeDependencyGraph(graph) {
-    const nodes = [];
-    for (const [filePath, node] of graph.nodes) {
-      nodes.push({
-        id: filePath,
-        filePath: node.filePath,
-        dependencies: node.dependencies,
-        dependents: node.dependents,
-        isEntryPoint: node.isEntryPoint,
-        isLeaf: node.isLeaf,
-        importCount: node.imports.length,
-        exportCount: node.exports.length
-      });
-    }
-    return {
-      nodes,
-      edges: this.generateEdges(graph)
-    };
-  }
-  generateEdges(graph) {
-    const edges = [];
-    for (const [filePath, node] of graph.nodes) {
-      for (const dependency of node.dependencies) {
-        if (graph.nodes.has(dependency)) {
-          edges.push({
-            from: filePath,
-            to: dependency,
-            type: "dependency"
-          });
-        }
-      }
-    }
-    return edges;
-  }
-  // Additional utility methods
-  async analyzeModule(filePath) {
-    const deps = this.intelligenceEngine.getDependencies(filePath);
-    const rootPath = process.cwd();
-    const externalDependencies = [];
-    const internalDependencies = [];
-    for (const dep of deps) {
-      if (dep.startsWith(".") || dep.startsWith("/") || path7__default.isAbsolute(dep)) {
-        internalDependencies.push(path7__default.relative(rootPath, dep));
-      } else {
-        externalDependencies.push(dep);
-      }
-    }
-    return {
-      filePath: path7__default.relative(rootPath, filePath),
-      externalDependencies,
-      internalDependencies,
-      circularImports: [],
-      // TODO: Implement
-      unusedImports: [],
-      // TODO: Implement with symbol usage analysis
-      missingDependencies: [],
-      // TODO: Implement with file existence checks
-      duplicateImports: []
-    };
-  }
-  getSchema() {
-    return {
-      type: "object",
-      properties: {
-        rootPath: {
-          type: "string",
-          description: "Root path to analyze dependencies from",
-          default: "current working directory"
-        },
-        filePatterns: {
-          type: "array",
-          items: { type: "string" },
-          description: "Glob patterns for files to include",
-          default: ["**/*.{ts,tsx,js,jsx}"]
-        },
-        excludePatterns: {
-          type: "array",
-          items: { type: "string" },
-          description: "Glob patterns for files to exclude",
-          default: ["**/node_modules/**", "**/dist/**", "**/.git/**"]
-        },
-        includeExternals: {
-          type: "boolean",
-          description: "Include external module dependencies",
-          default: false
-        },
-        detectCircular: {
-          type: "boolean",
-          description: "Detect circular dependencies",
-          default: true
-        },
-        findUnreachable: {
-          type: "boolean",
-          description: "Find unreachable files from entry points",
-          default: true
-        },
-        generateGraph: {
-          type: "boolean",
-          description: "Generate serialized dependency graph",
-          default: false
-        },
-        entryPoints: {
-          type: "array",
-          items: { type: "string" },
-          description: "Explicit entry point files (if not provided, will be inferred)",
-          default: []
-        },
-        maxDepth: {
-          type: "integer",
-          description: "Maximum dependency depth to analyze",
-          default: 50,
-          minimum: 1,
-          maximum: 1e3
-        }
-      }
-    };
-  }
-};
 var pathExists9 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
@@ -6758,7 +9153,7 @@ var CodeContextTool = class {
       codeMetrics = await this.calculateCodeMetrics(filePath, contextualSymbols);
     }
     return {
-      filePath: path7__default.relative(rootPath, filePath),
+      filePath: path10__default.relative(rootPath, filePath),
       symbols: contextualSymbols,
       dependencies,
       relationships,
@@ -6863,7 +9258,7 @@ var CodeContextTool = class {
     if (name.includes("controller") || name.includes("handler")) {
       tags.push("controller");
     }
-    const fileName = path7__default.basename(filePath);
+    const fileName = path10__default.basename(filePath);
     if (fileName.includes("test")) {
       tags.push("test");
     }
@@ -6935,7 +9330,7 @@ var CodeContextTool = class {
             target: relatedSymbol.name,
             strength: 0.8,
             description: `${symbol.name} uses ${relatedSymbol.name}`,
-            evidence: [`Same file: ${path7__default.basename(filePath)}`]
+            evidence: [`Same file: ${path10__default.basename(filePath)}`]
           });
         }
       }
@@ -6944,7 +9339,7 @@ var CodeContextTool = class {
       if (dep.type === "internal") {
         relationships.push({
           type: "dependency",
-          source: path7__default.basename(filePath),
+          source: path10__default.basename(filePath),
           target: dep.source,
           strength: 0.9,
           description: `File depends on ${dep.source}`,
@@ -6955,7 +9350,7 @@ var CodeContextTool = class {
     return relationships;
   }
   async analyzeSemanticContext(filePath, symbols, dependencies) {
-    const fileName = path7__default.basename(filePath);
+    const fileName = path10__default.basename(filePath);
     const content = await fs.promises.readFile(filePath, "utf-8");
     const purpose = this.inferPurpose(fileName, symbols, content);
     const domain = this.extractDomain(filePath, symbols, dependencies);
@@ -6990,7 +9385,7 @@ var CodeContextTool = class {
   }
   extractDomain(filePath, _symbols, dependencies) {
     const domains = [];
-    const pathParts = filePath.split(path7__default.sep);
+    const pathParts = filePath.split(path10__default.sep);
     for (const part of pathParts) {
       if (["auth", "user", "authentication"].includes(part.toLowerCase())) {
         domains.push("authentication");
@@ -7160,7 +9555,7 @@ var CodeContextTool = class {
       } catch {
       }
       return {
-        filePath: path7__default.relative(rootPath, ref.filePath),
+        filePath: path10__default.relative(rootPath, ref.filePath),
         absolutePath: ref.filePath,
         lineNumber: symbol.startPosition.row + 1,
         // Convert to 1-based
@@ -7206,7 +9601,7 @@ var CodeContextTool = class {
         } catch {
         }
         definition = {
-          filePath: path7__default.relative(rootPath, defRef.filePath),
+          filePath: path10__default.relative(rootPath, defRef.filePath),
           absolutePath: defRef.filePath,
           lineNumber: symbol.startPosition.row + 1,
           columnNumber: symbol.startPosition.column + 1,
@@ -7216,7 +9611,7 @@ var CodeContextTool = class {
         };
         if (includeDefinition) {
           usages.push({
-            filePath: path7__default.relative(rootPath, defRef.filePath),
+            filePath: path10__default.relative(rootPath, defRef.filePath),
             absolutePath: defRef.filePath,
             lineNumber: symbol.startPosition.row + 1,
             columnNumber: symbol.startPosition.column + 1,
@@ -7234,7 +9629,7 @@ var CodeContextTool = class {
         } catch {
         }
         usages.push({
-          filePath: path7__default.relative(rootPath, ref.file),
+          filePath: path10__default.relative(rootPath, ref.file),
           absolutePath: ref.file,
           lineNumber: ref.line + 1,
           // Convert to 1-based
@@ -7386,7 +9781,7 @@ var RefactoringAssistantTool = class {
     if (!this.isValidIdentifier(newName)) {
       throw new Error(`Invalid identifier: ${newName}`);
     }
-    const searchPath = scope === "file" && filePath ? path7__default.dirname(filePath) : process.cwd();
+    const searchPath = scope === "file" && filePath ? path10__default.dirname(filePath) : process.cwd();
     const searchResult = await this.symbolSearch.execute({
       query: symbolName,
       searchPath,
@@ -7614,7 +10009,7 @@ External references: ${Array.from(analysis.externalReferences).join(", ")}`;
     const functionBody = this.extractFunctionBody(functionLines.join("\n"));
     const usageSearch = await this.symbolSearch.execute({
       query: symbolName,
-      searchPath: path7__default.dirname(filePath),
+      searchPath: path10__default.dirname(filePath),
       includeUsages: true,
       fuzzyMatch: false
     });
@@ -7805,7 +10200,7 @@ External references: ${Array.from(analysis.externalReferences).join(", ")}`;
     );
     return {
       type: operationType,
-      description: `Move ${symbol.type} '${symbolName}' from ${path7__default.basename(sourceFile)} to ${path7__default.basename(targetFile)}`,
+      description: `Move ${symbol.type} '${symbolName}' from ${path10__default.basename(sourceFile)} to ${path10__default.basename(targetFile)}`,
       files: fileChanges,
       preview,
       safety
@@ -8191,9 +10586,9 @@ ${body}
     try {
       const content = await fs.promises.readFile(dependentFile, "utf-8");
       const lines = content.split("\n");
-      const dependentDir = path7__default.dirname(dependentFile);
-      const oldRelativePath = path7__default.relative(dependentDir, oldSourceFile).replace(/\\/g, "/");
-      const newRelativePath = path7__default.relative(dependentDir, newSourceFile).replace(/\\/g, "/");
+      const dependentDir = path10__default.dirname(dependentFile);
+      const oldRelativePath = path10__default.relative(dependentDir, oldSourceFile).replace(/\\/g, "/");
+      const newRelativePath = path10__default.relative(dependentDir, newSourceFile).replace(/\\/g, "/");
       const oldImportPath = oldRelativePath.startsWith(".") ? oldRelativePath : "./" + oldRelativePath;
       const newImportPath = newRelativePath.startsWith(".") ? newRelativePath : "./" + newRelativePath;
       const oldImportPathNoExt = oldImportPath.replace(/\.(ts|tsx|js|jsx)$/, "");
@@ -8231,8 +10626,8 @@ ${body}
     }
   }
   generateMovePreview(symbolName, sourceFile, targetFile, affectedFilesCount, operationType) {
-    const sourceName = path7__default.basename(sourceFile);
-    const targetName = path7__default.basename(targetFile);
+    const sourceName = path10__default.basename(sourceFile);
+    const targetName = path10__default.basename(targetFile);
     let preview = `--- Move ${operationType === "move_class" ? "Class" : "Function"} ---
 `;
     preview += `Symbol: ${symbolName}
@@ -8378,1040 +10773,6 @@ ${body}
     };
   }
 };
-var Parser;
-var JavaScript;
-var TypeScript;
-var Python;
-try {
-  Parser = __require("tree-sitter");
-  JavaScript = __require("tree-sitter-javascript");
-  TypeScript = __require("tree-sitter-typescript");
-  Python = __require("tree-sitter-python");
-} catch {
-  console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
-}
-var CodeIntelligenceEngine = class {
-  constructor(rootPath, options) {
-    // Core data structures
-    this.fileAsts = /* @__PURE__ */ new Map();
-    // filePath -> AST
-    this.fileMetadata = /* @__PURE__ */ new Map();
-    // filePath -> metadata
-    this.symbolIndex = /* @__PURE__ */ new Map();
-    // symbolName -> references
-    this.dependencyGraph = /* @__PURE__ */ new Map();
-    // filePath -> dependencies
-    this.reverseDependencies = /* @__PURE__ */ new Map();
-    // filePath -> dependents
-    this.crossReferences = /* @__PURE__ */ new Map();
-    // symbolName -> cross-refs
-    this.parseErrors = /* @__PURE__ */ new Map();
-    // filePath -> errors
-    // Parser instances
-    this.parsers = /* @__PURE__ */ new Map();
-    // File watcher
-    this.watcher = null;
-    this.isInitialized = false;
-    this.isIndexing = false;
-    this.filePatterns = ["**/*.{ts,tsx,js,jsx,py}"];
-    this.excludePatterns = ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/.grok/**"];
-    // Performance tracking
-    this.statistics = {
-      totalFiles: 0,
-      indexedFiles: 0,
-      totalSymbols: 0,
-      totalDependencies: 0,
-      memoryUsage: 0,
-      lastUpdateTime: 0,
-      averageParseTime: 0
-    };
-    // Debouncing for file changes
-    this.pendingUpdates = /* @__PURE__ */ new Map();
-    this.updateDebounceMs = 300;
-    this.rootPath = path7__default.resolve(rootPath);
-    if (options?.filePatterns) {
-      this.filePatterns = options.filePatterns;
-    }
-    if (options?.excludePatterns) {
-      this.excludePatterns = options.excludePatterns;
-    }
-    if (options?.updateDebounceMs !== void 0) {
-      this.updateDebounceMs = options.updateDebounceMs;
-    }
-    this.initializeParsers();
-  }
-  // ==================== Initialization ====================
-  initializeParsers() {
-    if (!Parser || !JavaScript || !TypeScript || !Python) {
-      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
-      return;
-    }
-    try {
-      const jsParser = new Parser();
-      jsParser.setLanguage(JavaScript);
-      this.parsers.set("javascript", jsParser);
-      this.parsers.set("js", jsParser);
-      this.parsers.set("jsx", jsParser);
-      const tsParser = new Parser();
-      tsParser.setLanguage(TypeScript.typescript);
-      this.parsers.set("typescript", tsParser);
-      this.parsers.set("ts", tsParser);
-      const tsxParser = new Parser();
-      tsxParser.setLanguage(TypeScript.tsx);
-      this.parsers.set("tsx", tsxParser);
-      const pyParser = new Parser();
-      pyParser.setLanguage(Python);
-      this.parsers.set("python", pyParser);
-      this.parsers.set("py", pyParser);
-    } catch (error) {
-      console.warn("Failed to initialize some parsers:", error);
-    }
-  }
-  async initialize() {
-    if (this.isInitialized) {
-      console.warn("CodeIntelligenceEngine already initialized");
-      return;
-    }
-    console.log(`\u{1F9E0} Initializing Code Intelligence Engine for: ${this.rootPath}`);
-    const startTime = Date.now();
-    try {
-      const sourceFiles = await this.scanSourceFiles();
-      console.log(`   Found ${sourceFiles.length} source files`);
-      this.isIndexing = true;
-      await this.indexFiles(sourceFiles);
-      this.isIndexing = false;
-      this.buildCrossReferences();
-      this.startFileWatcher();
-      this.updateStatistics();
-      this.isInitialized = true;
-      const duration = Date.now() - startTime;
-      console.log(`\u2705 Engine initialized in ${duration}ms`);
-      console.log(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
-    } catch (error) {
-      console.error("Failed to initialize Code Intelligence Engine:", error);
-      throw error;
-    }
-  }
-  async scanSourceFiles() {
-    const allFiles = [];
-    for (const pattern of this.filePatterns) {
-      const files = await glob(pattern, {
-        cwd: this.rootPath,
-        absolute: true,
-        ignore: this.excludePatterns,
-        nodir: true
-      });
-      allFiles.push(...files);
-    }
-    return [...new Set(allFiles)];
-  }
-  async indexFiles(files) {
-    const total = files.length;
-    let indexed = 0;
-    const batchSize = 10;
-    for (let i = 0; i < files.length; i += batchSize) {
-      const batch = files.slice(i, i + batchSize);
-      await Promise.all(batch.map((file) => this.indexFile(file)));
-      indexed += batch.length;
-      if (indexed % 50 === 0 || indexed === total) {
-        console.log(`   Indexing progress: ${indexed}/${total}`);
-      }
-    }
-  }
-  async indexFile(filePath) {
-    try {
-      const parseStart = Date.now();
-      const stats = await fs.promises.stat(filePath);
-      const content = await fs.promises.readFile(filePath, "utf-8");
-      const hash = this.computeHash(content);
-      const language = this.detectLanguage(filePath);
-      const existing = this.fileMetadata.get(filePath);
-      if (existing && existing.hash === hash) {
-        return;
-      }
-      const parseResult = await this.parseFile(filePath, content, language);
-      const parseTime = Date.now() - parseStart;
-      if (parseResult.tree) {
-        this.fileAsts.set(filePath, parseResult.tree);
-      }
-      this.fileMetadata.set(filePath, {
-        filePath: path7__default.relative(this.rootPath, filePath),
-        absolutePath: filePath,
-        language,
-        lastModified: stats.mtimeMs,
-        hash,
-        parseTime,
-        indexed: true
-      });
-      this.indexSymbols(filePath, parseResult.symbols);
-      this.indexDependencies(filePath, parseResult.imports);
-      if (parseResult.errors.length > 0) {
-        this.parseErrors.set(filePath, parseResult.errors);
-      } else {
-        this.parseErrors.delete(filePath);
-      }
-    } catch (error) {
-      console.warn(`Failed to index ${filePath}:`, error);
-      this.parseErrors.set(filePath, [{
-        message: error instanceof Error ? error.message : String(error),
-        line: 0,
-        column: 0,
-        severity: "error"
-      }]);
-    }
-  }
-  async parseFile(filePath, content, language) {
-    const errors = [];
-    try {
-      if (language === "typescript" || language === "tsx" || language === "javascript" || language === "jsx") {
-        return await this.parseWithTypeScript(content, language);
-      }
-      return await this.parseWithTreeSitter(content, language, filePath);
-    } catch (error) {
-      errors.push({
-        message: error instanceof Error ? error.message : String(error),
-        line: 0,
-        column: 0,
-        severity: "error"
-      });
-      return {
-        tree: null,
-        symbols: [],
-        imports: [],
-        exports: [],
-        errors
-      };
-    }
-  }
-  async parseWithTypeScript(content, language) {
-    try {
-      const ast = parse(content, {
-        jsx: language === "tsx" || language === "jsx",
-        loc: true,
-        range: true,
-        comment: true,
-        attachComments: true,
-        errorOnUnknownASTType: false,
-        errorOnTypeScriptSyntacticAndSemanticIssues: false
-      });
-      const symbols = this.extractTypeScriptSymbols(ast, content);
-      const imports = this.extractTypeScriptImports(ast);
-      const exports = this.extractTypeScriptExports(ast);
-      return {
-        tree: ast,
-        symbols,
-        imports,
-        exports,
-        errors: []
-      };
-    } catch (error) {
-      return {
-        tree: null,
-        symbols: [],
-        imports: [],
-        exports: [],
-        errors: [{
-          message: error instanceof Error ? error.message : String(error),
-          line: 0,
-          column: 0,
-          severity: "error"
-        }]
-      };
-    }
-  }
-  async parseWithTreeSitter(content, language, _filePath) {
-    try {
-      const parser = this.parsers.get(language);
-      if (!parser) {
-        throw new Error(`No parser available for language: ${language}`);
-      }
-      const tree = parser.parse(content);
-      const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
-      const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
-      const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
-      return {
-        tree: tree.rootNode,
-        symbols,
-        imports,
-        exports,
-        errors: []
-      };
-    } catch (error) {
-      return {
-        tree: null,
-        symbols: [],
-        imports: [],
-        exports: [],
-        errors: [{
-          message: error instanceof Error ? error.message : String(error),
-          line: 0,
-          column: 0,
-          severity: "error"
-        }]
-      };
-    }
-  }
-  // ==================== Symbol Extraction (TypeScript) ====================
-  extractTypeScriptSymbols(ast, _content) {
-    const symbols = [];
-    const visit = (node, scope = "global") => {
-      if (!node) return;
-      const getPosition = (pos) => ({
-        row: pos.line - 1,
-        column: pos.column
-      });
-      switch (node.type) {
-        case "FunctionDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "function",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope,
-              isAsync: node.async,
-              parameters: node.params?.map((param) => ({
-                name: param.name || param.left?.name || "unknown",
-                type: param.typeAnnotation?.typeAnnotation?.type,
-                optional: param.optional
-              })) || []
-            });
-          }
-          break;
-        case "ClassDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "class",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          node.body?.body?.forEach((member) => {
-            if (member.type === "MethodDefinition" && member.key?.name) {
-              symbols.push({
-                name: member.key.name,
-                type: "method",
-                startPosition: getPosition(member.loc.start),
-                endPosition: getPosition(member.loc.end),
-                scope: `${node.id?.name || "unknown"}.${member.key.name}`,
-                accessibility: member.accessibility,
-                isStatic: member.static,
-                isAsync: member.value?.async
-              });
-            }
-          });
-          break;
-        case "VariableDeclaration":
-          node.declarations?.forEach((decl) => {
-            if (decl.id?.name) {
-              symbols.push({
-                name: decl.id.name,
-                type: "variable",
-                startPosition: getPosition(decl.loc.start),
-                endPosition: getPosition(decl.loc.end),
-                scope
-              });
-            }
-          });
-          break;
-        case "TSInterfaceDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "interface",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-        case "TSEnumDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "enum",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-        case "TSTypeAliasDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "type",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild, scope);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child, scope);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return symbols;
-  }
-  extractTypeScriptImports(ast) {
-    const imports = [];
-    const visit = (node) => {
-      if (node.type === "ImportDeclaration") {
-        const specifiers = [];
-        node.specifiers?.forEach((spec) => {
-          switch (spec.type) {
-            case "ImportDefaultSpecifier":
-              specifiers.push({
-                name: spec.local.name,
-                isDefault: true
-              });
-              break;
-            case "ImportNamespaceSpecifier":
-              specifiers.push({
-                name: spec.local.name,
-                isNamespace: true
-              });
-              break;
-            case "ImportSpecifier":
-              specifiers.push({
-                name: spec.imported.name,
-                alias: spec.local.name !== spec.imported.name ? spec.local.name : void 0
-              });
-              break;
-          }
-        });
-        imports.push({
-          source: node.source.value,
-          specifiers,
-          isTypeOnly: node.importKind === "type",
-          startPosition: {
-            row: node.loc.start.line - 1,
-            column: node.loc.start.column
-          }
-        });
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return imports;
-  }
-  extractTypeScriptExports(ast) {
-    const exports = [];
-    const visit = (node) => {
-      switch (node.type) {
-        case "ExportNamedDeclaration":
-          if (node.declaration) {
-            if (node.declaration.id?.name) {
-              exports.push({
-                name: node.declaration.id.name,
-                type: this.getDeclarationType(node.declaration.type),
-                startPosition: {
-                  row: node.loc.start.line - 1,
-                  column: node.loc.start.column
-                }
-              });
-            }
-          } else if (node.specifiers) {
-            node.specifiers.forEach((spec) => {
-              exports.push({
-                name: spec.exported.name,
-                type: "variable",
-                startPosition: {
-                  row: node.loc.start.line - 1,
-                  column: node.loc.start.column
-                },
-                source: node.source?.value
-              });
-            });
-          }
-          break;
-        case "ExportDefaultDeclaration":
-          const name = node.declaration?.id?.name || "default";
-          exports.push({
-            name,
-            type: this.getDeclarationType(node.declaration?.type) || "default",
-            startPosition: {
-              row: node.loc.start.line - 1,
-              column: node.loc.start.column
-            },
-            isDefault: true
-          });
-          break;
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return exports;
-  }
-  // ==================== Symbol Extraction (Tree-sitter) ====================
-  extractTreeSitterSymbols(node, _content, _language) {
-    const symbols = [];
-    const visit = (node2, scope = "global") => {
-      const startPos = { row: node2.startPosition.row, column: node2.startPosition.column };
-      const endPos = { row: node2.endPosition.row, column: node2.endPosition.column };
-      switch (node2.type) {
-        case "function_declaration":
-        case "function_definition":
-          const funcName = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
-          if (funcName) {
-            symbols.push({
-              name: funcName,
-              type: "function",
-              startPosition: startPos,
-              endPosition: endPos,
-              scope
-            });
-          }
-          break;
-        case "class_declaration":
-        case "class_definition":
-          const className = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
-          if (className) {
-            symbols.push({
-              name: className,
-              type: "class",
-              startPosition: startPos,
-              endPosition: endPos,
-              scope
-            });
-          }
-          break;
-        case "variable_declaration":
-        case "lexical_declaration":
-          node2.children?.forEach((child) => {
-            if (child.type === "variable_declarator") {
-              const varName = this.extractNodeName(child, "name") || this.extractNodeName(child, "identifier");
-              if (varName) {
-                symbols.push({
-                  name: varName,
-                  type: "variable",
-                  startPosition: { row: child.startPosition.row, column: child.startPosition.column },
-                  endPosition: { row: child.endPosition.row, column: child.endPosition.column },
-                  scope
-                });
-              }
-            }
-          });
-          break;
-      }
-      node2.children?.forEach((child) => visit(child, scope));
-    };
-    visit(node);
-    return symbols;
-  }
-  extractTreeSitterImports(node, content, _language) {
-    const imports = [];
-    const visit = (node2) => {
-      if (node2.type === "import_statement" || node2.type === "import_from_statement") {
-        const sourceNode = node2.children?.find(
-          (child) => child.type === "string" || child.type === "string_literal"
-        );
-        if (sourceNode) {
-          const source = content.slice(sourceNode.startIndex + 1, sourceNode.endIndex - 1);
-          imports.push({
-            source,
-            specifiers: [],
-            startPosition: {
-              row: node2.startPosition.row,
-              column: node2.startPosition.column
-            }
-          });
-        }
-      }
-      node2.children?.forEach((child) => visit(child));
-    };
-    visit(node);
-    return imports;
-  }
-  extractTreeSitterExports(node, _content, _language) {
-    const exports = [];
-    const visit = (node2) => {
-      if (node2.type === "export_statement") {
-        const name = this.extractNodeName(node2, "name") || "unknown";
-        exports.push({
-          name,
-          type: "variable",
-          startPosition: {
-            row: node2.startPosition.row,
-            column: node2.startPosition.column
-          }
-        });
-      }
-      node2.children?.forEach((child) => visit(child));
-    };
-    visit(node);
-    return exports;
-  }
-  // ==================== Symbol Indexing ====================
-  indexSymbols(filePath, symbols) {
-    for (const symbol of symbols) {
-      const existing = this.symbolIndex.get(symbol.name) || [];
-      const filtered = existing.filter((ref) => ref.filePath !== filePath);
-      const symbolRef = {
-        symbol,
-        filePath,
-        usages: []
-        // Will be populated by buildCrossReferences
-      };
-      filtered.push(symbolRef);
-      this.symbolIndex.set(symbol.name, filtered);
-    }
-  }
-  indexDependencies(filePath, imports) {
-    const dependencies = /* @__PURE__ */ new Set();
-    for (const importInfo of imports) {
-      if (importInfo.source.startsWith(".")) {
-        const resolvedPath = this.resolveImportPath(importInfo.source, filePath);
-        if (resolvedPath) {
-          dependencies.add(resolvedPath);
-        }
-      }
-    }
-    this.dependencyGraph.set(filePath, dependencies);
-    for (const dependency of dependencies) {
-      const dependents = this.reverseDependencies.get(dependency) || /* @__PURE__ */ new Set();
-      dependents.add(filePath);
-      this.reverseDependencies.set(dependency, dependents);
-    }
-  }
-  resolveImportPath(importPath, currentFile) {
-    const currentDir = path7__default.dirname(currentFile);
-    const basePath = path7__default.resolve(currentDir, importPath);
-    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
-    for (const ext of extensions) {
-      const fullPath = basePath + ext;
-      if (fs.existsSync(fullPath)) {
-        return fullPath;
-      }
-    }
-    for (const ext of extensions) {
-      const indexPath = path7__default.join(basePath, `index${ext}`);
-      if (fs.existsSync(indexPath)) {
-        return indexPath;
-      }
-    }
-    return null;
-  }
-  // ==================== Cross-Reference Building ====================
-  buildCrossReferences() {
-    this.crossReferences.clear();
-    for (const [symbolName, symbolRefs] of this.symbolIndex) {
-      const definition = symbolRefs.find(
-        (ref) => ref.symbol.startPosition.row >= 0
-      );
-      if (!definition) continue;
-      const crossRef = {
-        symbolName,
-        definitionFile: definition.filePath,
-        definitionLocation: {
-          line: definition.symbol.startPosition.row,
-          column: definition.symbol.startPosition.column
-        },
-        references: []
-      };
-      for (const ref of symbolRefs) {
-        if (ref.filePath === definition.filePath) {
-          crossRef.references.push({
-            file: ref.filePath,
-            line: ref.symbol.startPosition.row,
-            column: ref.symbol.startPosition.column,
-            type: "definition"
-          });
-        }
-        try {
-          const content = fs.readFileSync(ref.filePath, "utf-8");
-          const lines = content.split("\n");
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const regex = new RegExp(`\\b${symbolName}\\b`, "g");
-            let match;
-            while ((match = regex.exec(line)) !== null) {
-              if (ref.filePath === definition.filePath && i === definition.symbol.startPosition.row) {
-                continue;
-              }
-              let usageType = "reference";
-              if (line.includes("import") && line.includes(symbolName)) {
-                usageType = "import";
-              } else if (line.includes("export") && line.includes(symbolName)) {
-                usageType = "export";
-              } else if (line.includes(symbolName + "(")) {
-                usageType = "call";
-              }
-              crossRef.references.push({
-                file: ref.filePath,
-                line: i,
-                column: match.index,
-                type: usageType
-              });
-            }
-          }
-        } catch {
-        }
-      }
-      this.crossReferences.set(symbolName, crossRef);
-    }
-  }
-  // ==================== File Watching ====================
-  startFileWatcher() {
-    console.log("   Starting file watcher...");
-    this.watcher = chokidar.watch(this.filePatterns, {
-      cwd: this.rootPath,
-      ignored: this.excludePatterns,
-      persistent: true,
-      ignoreInitial: true,
-      // Don't fire events for existing files
-      awaitWriteFinish: {
-        stabilityThreshold: 200,
-        pollInterval: 100
-      }
-    });
-    this.watcher.on("add", (relPath) => {
-      const absPath = path7__default.resolve(this.rootPath, relPath);
-      this.scheduleFileUpdate(absPath, "add");
-    }).on("change", (relPath) => {
-      const absPath = path7__default.resolve(this.rootPath, relPath);
-      this.scheduleFileUpdate(absPath, "change");
-    }).on("unlink", (relPath) => {
-      const absPath = path7__default.resolve(this.rootPath, relPath);
-      this.handleFileDelete(absPath);
-    }).on("error", (err) => {
-      console.error("File watcher error:", err);
-    });
-  }
-  scheduleFileUpdate(filePath, event) {
-    const existing = this.pendingUpdates.get(filePath);
-    if (existing) {
-      clearTimeout(existing);
-    }
-    const timeout = setTimeout(async () => {
-      this.pendingUpdates.delete(filePath);
-      await this.handleFileUpdate(filePath, event);
-    }, this.updateDebounceMs);
-    this.pendingUpdates.set(filePath, timeout);
-  }
-  async handleFileUpdate(filePath, _event) {
-    if (this.isIndexing) {
-      return;
-    }
-    try {
-      const oldSymbols = this.getFileSymbols(filePath);
-      await this.indexFile(filePath);
-      const newSymbols = this.getFileSymbols(filePath);
-      const affectedSymbols = /* @__PURE__ */ new Set([
-        ...oldSymbols.map((s) => s.name),
-        ...newSymbols.map((s) => s.name)
-      ]);
-      for (const symbolName of affectedSymbols) {
-        const refs = this.symbolIndex.get(symbolName);
-        if (refs) {
-          this.rebuildSymbolCrossReference(symbolName, refs);
-        }
-      }
-      this.updateStatistics();
-      console.log(`   Updated: ${path7__default.relative(this.rootPath, filePath)}`);
-    } catch (error) {
-      console.error(`Failed to update ${filePath}:`, error);
-    }
-  }
-  handleFileDelete(filePath) {
-    this.fileAsts.delete(filePath);
-    this.fileMetadata.delete(filePath);
-    this.parseErrors.delete(filePath);
-    const symbols = this.getFileSymbols(filePath);
-    for (const symbol of symbols) {
-      const refs = this.symbolIndex.get(symbol.name);
-      if (refs) {
-        const filtered = refs.filter((ref) => ref.filePath !== filePath);
-        if (filtered.length > 0) {
-          this.symbolIndex.set(symbol.name, filtered);
-        } else {
-          this.symbolIndex.delete(symbol.name);
-        }
-      }
-      this.crossReferences.delete(symbol.name);
-    }
-    this.dependencyGraph.delete(filePath);
-    this.reverseDependencies.delete(filePath);
-    for (const [file, dependents] of this.reverseDependencies) {
-      if (dependents.has(filePath)) {
-        dependents.delete(filePath);
-        if (dependents.size === 0) {
-          this.reverseDependencies.delete(file);
-        }
-      }
-    }
-    this.updateStatistics();
-    console.log(`   Deleted: ${path7__default.relative(this.rootPath, filePath)}`);
-  }
-  rebuildSymbolCrossReference(symbolName, refs) {
-    const definition = refs.find(
-      (ref) => ref.symbol.startPosition.row >= 0
-    );
-    if (!definition) return;
-    const crossRef = {
-      symbolName,
-      definitionFile: definition.filePath,
-      definitionLocation: {
-        line: definition.symbol.startPosition.row,
-        column: definition.symbol.startPosition.column
-      },
-      references: []
-    };
-    this.crossReferences.set(symbolName, crossRef);
-  }
-  // ==================== Public Query API ====================
-  getAST(filePath) {
-    return this.fileAsts.get(filePath);
-  }
-  findSymbol(symbolName) {
-    return this.symbolIndex.get(symbolName) || [];
-  }
-  findSymbolByPattern(pattern, caseSensitive = false) {
-    const results = [];
-    const regex = new RegExp(pattern, caseSensitive ? "" : "i");
-    for (const [symbolName, refs] of this.symbolIndex) {
-      if (regex.test(symbolName)) {
-        results.push(...refs);
-      }
-    }
-    return results;
-  }
-  findReferences(symbolName) {
-    return this.crossReferences.get(symbolName);
-  }
-  getDependencies(filePath) {
-    return this.dependencyGraph.get(filePath) || /* @__PURE__ */ new Set();
-  }
-  getDependents(filePath) {
-    return this.reverseDependencies.get(filePath) || /* @__PURE__ */ new Set();
-  }
-  getFileSymbols(filePath) {
-    const symbols = [];
-    for (const refs of this.symbolIndex.values()) {
-      for (const ref of refs) {
-        if (ref.filePath === filePath) {
-          symbols.push(ref.symbol);
-        }
-      }
-    }
-    return symbols;
-  }
-  getFileMetadata(filePath) {
-    return this.fileMetadata.get(filePath);
-  }
-  getParseErrors(filePath) {
-    if (filePath) {
-      return this.parseErrors.get(filePath);
-    }
-    return new Map(this.parseErrors);
-  }
-  getAllFiles() {
-    return Array.from(this.fileMetadata.keys());
-  }
-  getAllSymbols() {
-    return new Map(this.symbolIndex);
-  }
-  analyzeImpact(filePath, symbolName) {
-    const affectedFiles = /* @__PURE__ */ new Set();
-    const affectedSymbols = /* @__PURE__ */ new Set();
-    const circularDependencies = [];
-    const warnings = [];
-    if (symbolName) {
-      const crossRef = this.crossReferences.get(symbolName);
-      if (crossRef) {
-        for (const ref of crossRef.references) {
-          affectedFiles.add(ref.file);
-        }
-        affectedSymbols.add(symbolName);
-      }
-    } else {
-      affectedFiles.add(filePath);
-      const dependents = this.getDependents(filePath);
-      for (const dependent of dependents) {
-        affectedFiles.add(dependent);
-      }
-      const fileSymbols = this.getFileSymbols(filePath);
-      for (const symbol of fileSymbols) {
-        affectedSymbols.add(symbol.name);
-      }
-    }
-    const visited = /* @__PURE__ */ new Set();
-    const path25 = [];
-    const dfs = (file) => {
-      if (path25.includes(file)) {
-        const cycleStart = path25.indexOf(file);
-        circularDependencies.push(path25.slice(cycleStart).concat([file]));
-        return;
-      }
-      if (visited.has(file)) return;
-      visited.add(file);
-      path25.push(file);
-      const deps = this.getDependencies(file);
-      for (const dep of deps) {
-        if (affectedFiles.has(dep)) {
-          dfs(dep);
-        }
-      }
-      path25.pop();
-    };
-    dfs(filePath);
-    if (affectedFiles.size > 10) {
-      warnings.push("Large number of affected files");
-    }
-    if (circularDependencies.length > 0) {
-      warnings.push("Circular dependencies detected");
-    }
-    if (affectedSymbols.size > 20) {
-      warnings.push("Large number of affected symbols");
-    }
-    let riskLevel = "low";
-    if (affectedFiles.size > 10 || circularDependencies.length > 0) {
-      riskLevel = "high";
-    } else if (affectedFiles.size > 5 || affectedSymbols.size > 10) {
-      riskLevel = "medium";
-    }
-    return {
-      affectedFiles,
-      affectedSymbols,
-      circularDependencies,
-      riskLevel,
-      warnings
-    };
-  }
-  getStatistics() {
-    return { ...this.statistics };
-  }
-  isReady() {
-    return this.isInitialized && !this.isIndexing;
-  }
-  // ==================== Utility Methods ====================
-  detectLanguage(filePath) {
-    const ext = path7__default.extname(filePath).slice(1).toLowerCase();
-    switch (ext) {
-      case "js":
-      case "mjs":
-      case "cjs":
-        return "javascript";
-      case "jsx":
-        return "jsx";
-      case "ts":
-        return "typescript";
-      case "tsx":
-        return "tsx";
-      case "py":
-      case "pyw":
-        return "python";
-      default:
-        return "javascript";
-    }
-  }
-  computeHash(content) {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      const char = content.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  }
-  extractNodeName(node, nameField) {
-    const nameNode = node.children?.find((child) => child.type === nameField);
-    return nameNode ? nameNode.text : null;
-  }
-  getDeclarationType(nodeType) {
-    switch (nodeType) {
-      case "FunctionDeclaration":
-        return "function";
-      case "ClassDeclaration":
-        return "class";
-      case "TSInterfaceDeclaration":
-        return "interface";
-      case "TSEnumDeclaration":
-        return "enum";
-      case "TSTypeAliasDeclaration":
-        return "type";
-      default:
-        return "variable";
-    }
-  }
-  updateStatistics() {
-    const totalSymbols = Array.from(this.symbolIndex.values()).reduce((sum, refs) => sum + refs.length, 0);
-    const totalDeps = Array.from(this.dependencyGraph.values()).reduce((sum, deps) => sum + deps.size, 0);
-    const parseTimes = Array.from(this.fileMetadata.values()).map((meta) => meta.parseTime).filter((time) => time > 0);
-    const avgParseTime = parseTimes.length > 0 ? parseTimes.reduce((sum, time) => sum + time, 0) / parseTimes.length : 0;
-    this.statistics = {
-      totalFiles: this.fileMetadata.size,
-      indexedFiles: Array.from(this.fileMetadata.values()).filter((m) => m.indexed).length,
-      totalSymbols,
-      totalDependencies: totalDeps,
-      memoryUsage: process.memoryUsage().heapUsed,
-      lastUpdateTime: Date.now(),
-      averageParseTime: Math.round(avgParseTime)
-    };
-  }
-  // ==================== Cleanup ====================
-  dispose() {
-    console.log("\u{1F9E0} Disposing Code Intelligence Engine");
-    if (this.watcher) {
-      this.watcher.close();
-      this.watcher = null;
-    }
-    for (const timeout of this.pendingUpdates.values()) {
-      clearTimeout(timeout);
-    }
-    this.pendingUpdates.clear();
-    this.fileAsts.clear();
-    this.fileMetadata.clear();
-    this.symbolIndex.clear();
-    this.dependencyGraph.clear();
-    this.reverseDependencies.clear();
-    this.crossReferences.clear();
-    this.parseErrors.clear();
-    this.isInitialized = false;
-    console.log("   Engine disposed");
-  }
-};
 var TokenCounter = class {
   constructor(model = "gpt-4") {
     try {
@@ -9477,7 +10838,7 @@ function createTokenCounter(model) {
 }
 function loadCustomInstructions(workingDirectory = process.cwd()) {
   try {
-    const instructionsPath = path7.join(workingDirectory, ".grok", "GROK.md");
+    const instructionsPath = path10.join(workingDirectory, ".grok", "GROK.md");
     if (!fs.existsSync(instructionsPath)) {
       return null;
     }
@@ -9514,6 +10875,7 @@ var GrokAgent = class extends EventEmitter {
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
+    this.taskPlanner = new TaskPlannerTool(process.cwd());
     this.multiFileEditor = new MultiFileEditorTool();
     this.advancedSearch = new AdvancedSearchTool();
     this.fileTreeOps = new FileTreeOperationsTool();
@@ -9547,6 +10909,7 @@ CORE TOOLS:
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+- task_planner: Intelligent multi-step task planning with automatic decomposition and execution
 
 ADVANCED TOOLS:
 - multi_file_edit: Perform atomic operations across multiple files with transaction support
@@ -10150,6 +11513,8 @@ EOF`;
           return await this.codeContext.execute(args);
         case "refactoring_assistant":
           return await this.refactoringAssistant.execute(args);
+        case "task_planner":
+          return await this.taskPlanner.execute(args);
         default:
           if (toolCall.function.name.startsWith("mcp__")) {
             return await this.executeMCPTool(toolCall);
@@ -10201,11 +11566,11 @@ EOF`;
   }
   saveSessionLog() {
     try {
-      const sessionDir = path7__default.join(__require("os").homedir(), ".grok");
+      const sessionDir = path10__default.join(__require("os").homedir(), ".grok");
       if (!fs__default.existsSync(sessionDir)) {
         fs__default.mkdirSync(sessionDir, { recursive: true });
       }
-      const sessionFile = path7__default.join(sessionDir, "session.log");
+      const sessionFile = path10__default.join(sessionDir, "session.log");
       const logLines = this.chatHistory.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
       fs__default.writeFileSync(sessionFile, logLines);
     } catch (error) {
@@ -10233,7 +11598,7 @@ EOF`;
   }
   logEntry(entry) {
     try {
-      const dir = path7__default.dirname(this.sessionLogPath);
+      const dir = path10__default.dirname(this.sessionLogPath);
       if (!fs__default.existsSync(dir)) {
         fs__default.mkdirSync(dir, { recursive: true });
       }
@@ -10645,7 +12010,7 @@ function updateCurrentModel(modelName) {
 }
 var ClaudeMdParserImpl = class {
   async parseClaude(rootPath) {
-    const claudePath = path7__default.join(rootPath, "CLAUDE.md");
+    const claudePath = path10__default.join(rootPath, "CLAUDE.md");
     if (!existsSync(claudePath)) {
       return {
         exists: false,
@@ -10654,7 +12019,7 @@ var ClaudeMdParserImpl = class {
       };
     }
     try {
-      const content = await ops6.promises.readFile(claudePath, "utf-8");
+      const content = await ops9.promises.readFile(claudePath, "utf-8");
       const hasDocumentationSection = content.includes("Documentation System Workflow") || content.includes(".agent documentation system");
       return {
         exists: true,
@@ -10670,7 +12035,7 @@ var ClaudeMdParserImpl = class {
     }
   }
   async updateClaude(rootPath, documentationSection) {
-    const claudePath = path7__default.join(rootPath, "CLAUDE.md");
+    const claudePath = path10__default.join(rootPath, "CLAUDE.md");
     try {
       const { exists, content, hasDocumentationSection } = await this.parseClaude(rootPath);
       if (hasDocumentationSection) {
@@ -10689,7 +12054,7 @@ This document provides context and instructions for Claude Code when working wit
 
 ${documentationSection}`;
       }
-      await ops6.promises.writeFile(claudePath, newContent);
+      await ops9.promises.writeFile(claudePath, newContent);
       return {
         success: true,
         message: exists ? "\u2705 Updated existing CLAUDE.md with documentation system instructions" : "\u2705 Created CLAUDE.md with documentation system instructions"
@@ -10746,7 +12111,7 @@ var AgentSystemGenerator = class {
     this.config = config2;
   }
   async generateAgentSystem() {
-    const agentPath = path7__default.join(this.config.rootPath, ".agent");
+    const agentPath = path10__default.join(this.config.rootPath, ".agent");
     const filesCreated = [];
     try {
       if (existsSync(agentPath)) {
@@ -10756,15 +12121,15 @@ var AgentSystemGenerator = class {
           filesCreated: []
         };
       }
-      await ops6.mkdir(agentPath, { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "system"), { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "tasks"), { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "sop"), { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "incidents"), { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "guardrails"), { recursive: true });
-      await ops6.mkdir(path7__default.join(agentPath, "commands"), { recursive: true });
+      await ops9.mkdir(agentPath, { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "system"), { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "tasks"), { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "sop"), { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "incidents"), { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "guardrails"), { recursive: true });
+      await ops9.mkdir(path10__default.join(agentPath, "commands"), { recursive: true });
       const readmeContent = this.generateReadmeContent();
-      await ops6.promises.writeFile(path7__default.join(agentPath, "README.md"), readmeContent);
+      await ops9.promises.writeFile(path10__default.join(agentPath, "README.md"), readmeContent);
       filesCreated.push(".agent/README.md");
       const systemFiles = await this.generateSystemDocs(agentPath);
       filesCreated.push(...systemFiles);
@@ -10871,16 +12236,16 @@ Documentation for documentation system commands:
 `;
   }
   async generateSystemDocs(agentPath) {
-    const systemPath = path7__default.join(agentPath, "system");
+    const systemPath = path10__default.join(agentPath, "system");
     const files = [];
     const archContent = this.config.projectType === "grok-cli" ? this.generateGrokArchitecture() : this.generateExternalArchitecture();
-    await ops6.promises.writeFile(path7__default.join(systemPath, "architecture.md"), archContent);
+    await ops9.promises.writeFile(path10__default.join(systemPath, "architecture.md"), archContent);
     files.push(".agent/system/architecture.md");
     const criticalStateContent = this.generateCriticalState();
-    await ops6.promises.writeFile(path7__default.join(systemPath, "critical-state.md"), criticalStateContent);
+    await ops9.promises.writeFile(path10__default.join(systemPath, "critical-state.md"), criticalStateContent);
     files.push(".agent/system/critical-state.md");
     const apiContent = this.generateApiSchema();
-    await ops6.promises.writeFile(path7__default.join(systemPath, "api-schema.md"), apiContent);
+    await ops9.promises.writeFile(path10__default.join(systemPath, "api-schema.md"), apiContent);
     files.push(".agent/system/api-schema.md");
     return files;
   }
@@ -11172,7 +12537,7 @@ interface Tool {
     }
   }
   async generateInitialSOPs(agentPath) {
-    const sopPath = path7__default.join(agentPath, "sop");
+    const sopPath = path10__default.join(agentPath, "sop");
     const files = [];
     const docWorkflowContent = `# \u{1F4DA} Documentation Workflow SOP
 
@@ -11237,7 +12602,7 @@ interface Tool {
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-    await ops6.promises.writeFile(path7__default.join(sopPath, "documentation-workflow.md"), docWorkflowContent);
+    await ops9.promises.writeFile(path10__default.join(sopPath, "documentation-workflow.md"), docWorkflowContent);
     files.push(".agent/sop/documentation-workflow.md");
     if (this.config.projectType === "grok-cli") {
       const newCommandContent = `# \u2699\uFE0F Adding New Commands SOP
@@ -11312,16 +12677,16 @@ Create tool in \`src/tools/\`, then reference in command handler.
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-      await ops6.promises.writeFile(path7__default.join(sopPath, "adding-new-command.md"), newCommandContent);
+      await ops9.promises.writeFile(path10__default.join(sopPath, "adding-new-command.md"), newCommandContent);
       files.push(".agent/sop/adding-new-command.md");
     }
     return files;
   }
   async generateExampleTask(agentPath) {
-    const tasksPath = path7__default.join(agentPath, "tasks");
+    const tasksPath = path10__default.join(agentPath, "tasks");
     const files = [];
     const exampleContent = this.config.projectType === "grok-cli" ? this.generateGrokExampleTask() : this.generateExternalExampleTask();
-    await ops6.promises.writeFile(path7__default.join(tasksPath, "example-prd.md"), exampleContent);
+    await ops9.promises.writeFile(path10__default.join(tasksPath, "example-prd.md"), exampleContent);
     files.push(".agent/tasks/example-prd.md");
     return files;
   }
@@ -11444,7 +12809,7 @@ Grok CLI needs better documentation tools to help users document both the CLI it
 `;
   }
   async generateCommandDocs(agentPath) {
-    const commandsPath = path7__default.join(agentPath, "commands");
+    const commandsPath = path10__default.join(agentPath, "commands");
     const files = [];
     const initAgentContent = `# \u{1F4D6} /init-agent Command
 
@@ -11513,15 +12878,15 @@ After initialization:
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-    await ops6.promises.writeFile(path7__default.join(commandsPath, "init-agent.md"), initAgentContent);
+    await ops9.promises.writeFile(path10__default.join(commandsPath, "init-agent.md"), initAgentContent);
     files.push(".agent/commands/init-agent.md");
     return files;
   }
   async rebuildAgentSystem() {
-    const agentPath = path7__default.join(this.config.rootPath, ".agent");
+    const agentPath = path10__default.join(this.config.rootPath, ".agent");
     try {
       if (existsSync(agentPath)) {
-        await ops6.rm(agentPath, { recursive: true, force: true });
+        await ops9.rm(agentPath, { recursive: true, force: true });
       }
       return await this.generateAgentSystem();
     } catch (error) {
@@ -11598,7 +12963,7 @@ var ReadmeGenerator = class {
   async generateReadme() {
     try {
       const analysis = await this.analyzeProject();
-      const readmePath = path7__default.join(this.config.rootPath, "README.md");
+      const readmePath = path10__default.join(this.config.rootPath, "README.md");
       const readmeExists = existsSync(readmePath);
       if (readmeExists && !this.config.updateExisting) {
         return {
@@ -11607,7 +12972,7 @@ var ReadmeGenerator = class {
         };
       }
       const content = this.generateReadmeContent(analysis);
-      await ops6.promises.writeFile(readmePath, content);
+      await ops9.promises.writeFile(readmePath, content);
       return {
         success: true,
         message: readmeExists ? "\u2705 Updated existing README.md with comprehensive documentation" : "\u2705 Created new README.md with project documentation",
@@ -11632,14 +12997,14 @@ var ReadmeGenerator = class {
       mainFiles: []
     };
     try {
-      const packagePath = path7__default.join(this.config.rootPath, "package.json");
+      const packagePath = path10__default.join(this.config.rootPath, "package.json");
       if (existsSync(packagePath)) {
-        const packageContent = await ops6.promises.readFile(packagePath, "utf-8");
+        const packageContent = await ops9.promises.readFile(packagePath, "utf-8");
         analysis.packageJson = JSON.parse(packageContent);
         analysis.dependencies = Object.keys(analysis.packageJson.dependencies || {});
         analysis.devDependencies = Object.keys(analysis.packageJson.devDependencies || {});
         analysis.hasReact = analysis.dependencies.includes("react") || analysis.devDependencies.includes("react");
-        analysis.hasTypeScript = analysis.devDependencies.includes("typescript") || existsSync(path7__default.join(this.config.rootPath, "tsconfig.json"));
+        analysis.hasTypeScript = analysis.devDependencies.includes("typescript") || existsSync(path10__default.join(this.config.rootPath, "tsconfig.json"));
         const scripts = analysis.packageJson.scripts || {};
         analysis.buildScripts = Object.keys(scripts).filter(
           (script) => ["build", "dev", "start", "test", "lint", "typecheck"].includes(script)
@@ -11651,7 +13016,7 @@ var ReadmeGenerator = class {
       }
       const commonFiles = ["src/", "lib/", "docs/", "test/", "tests/", "__tests__/"];
       for (const file of commonFiles) {
-        if (existsSync(path7__default.join(this.config.rootPath, file))) {
+        if (existsSync(path10__default.join(this.config.rootPath, file))) {
           if (file.includes("test")) analysis.hasTests = true;
           if (file.includes("docs")) analysis.hasDocs = true;
           analysis.mainFiles.push(file);
@@ -11823,7 +13188,7 @@ npm run build
     content += `## \u2699\uFE0F Configuration
 
 `;
-    if (existsSync(path7__default.join(this.config.rootPath, ".env.example"))) {
+    if (existsSync(path10__default.join(this.config.rootPath, ".env.example"))) {
       content += `Copy \`.env.example\` to \`.env\` and configure your environment variables:
 
 `;
@@ -11924,7 +13289,7 @@ var CommentsGenerator = class {
           message: "File not found"
         };
       }
-      const content = await ops6.promises.readFile(this.config.filePath, "utf-8");
+      const content = await ops9.promises.readFile(this.config.filePath, "utf-8");
       const analysis = this.analyzeCode(content);
       if (analysis.hasExistingComments) {
         return {
@@ -11934,13 +13299,13 @@ var CommentsGenerator = class {
       }
       const modifiedContent = this.addComments(content, analysis);
       const backupPath = this.config.filePath + ".backup";
-      await ops6.promises.writeFile(backupPath, content);
-      await ops6.promises.writeFile(this.config.filePath, modifiedContent);
+      await ops9.promises.writeFile(backupPath, content);
+      await ops9.promises.writeFile(this.config.filePath, modifiedContent);
       const commentCount = this.countAddedComments(analysis);
       return {
         success: true,
-        message: `\u2705 Added ${commentCount} comments to ${path7__default.basename(this.config.filePath)}
-\u{1F4C1} Backup created: ${path7__default.basename(backupPath)}`,
+        message: `\u2705 Added ${commentCount} comments to ${path10__default.basename(this.config.filePath)}
+\u{1F4C1} Backup created: ${path10__default.basename(backupPath)}`,
         modifiedContent
       };
     } catch (error) {
@@ -12008,7 +13373,7 @@ var CommentsGenerator = class {
     return analysis;
   }
   detectLanguage() {
-    const ext = path7__default.extname(this.config.filePath);
+    const ext = path10__default.extname(this.config.filePath);
     switch (ext) {
       case ".ts":
       case ".tsx":
@@ -12149,8 +13514,8 @@ var ApiDocsGenerator = class {
       }
       const content = this.config.outputFormat === "md" ? this.generateMarkdown(documentation) : this.generateHtml(documentation);
       const outputFileName = `api-docs.${this.config.outputFormat}`;
-      const outputPath = path7__default.join(this.config.rootPath, outputFileName);
-      await ops6.promises.writeFile(outputPath, content);
+      const outputPath = path10__default.join(this.config.rootPath, outputFileName);
+      await ops9.promises.writeFile(outputPath, content);
       const stats = this.getDocumentationStats(documentation);
       return {
         success: true,
@@ -12177,7 +13542,7 @@ ${stats}`,
     };
     const scanPaths = this.config.scanPaths.length > 0 ? this.config.scanPaths : ["src/", "lib/", "./"];
     for (const scanPath of scanPaths) {
-      const fullPath = path7__default.join(this.config.rootPath, scanPath);
+      const fullPath = path10__default.join(this.config.rootPath, scanPath);
       if (existsSync(fullPath)) {
         await this.scanDirectory(fullPath, documentation);
       }
@@ -12186,9 +13551,9 @@ ${stats}`,
   }
   async scanDirectory(dirPath, documentation) {
     try {
-      const entries = await ops6.promises.readdir(dirPath, { withFileTypes: true });
+      const entries = await ops9.promises.readdir(dirPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path7__default.join(dirPath, entry.name);
+        const fullPath = path10__default.join(dirPath, entry.name);
         if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
           await this.scanDirectory(fullPath, documentation);
         } else if (entry.isFile() && this.isApiFile(entry.name)) {
@@ -12200,13 +13565,13 @@ ${stats}`,
   }
   isApiFile(fileName) {
     const apiExtensions = [".ts", ".js", ".tsx", ".jsx"];
-    const ext = path7__default.extname(fileName);
+    const ext = path10__default.extname(fileName);
     return apiExtensions.includes(ext) && !fileName.includes(".test.") && !fileName.includes(".spec.") && !fileName.includes(".d.ts");
   }
   async parseApiFile(filePath, documentation) {
     try {
-      const content = await ops6.promises.readFile(filePath, "utf-8");
-      const relativePath = path7__default.relative(this.config.rootPath, filePath);
+      const content = await ops9.promises.readFile(filePath, "utf-8");
+      const relativePath = path10__default.relative(this.config.rootPath, filePath);
       const moduleName = this.getModuleName(relativePath);
       const lines = content.split("\n");
       const moduleInfo = {
@@ -12512,7 +13877,7 @@ var ChangelogGenerator = class {
   }
   async generateChangelog() {
     try {
-      const gitPath = path7__default.join(this.config.rootPath, ".git");
+      const gitPath = path10__default.join(this.config.rootPath, ".git");
       if (!existsSync(gitPath)) {
         return {
           success: false,
@@ -12528,15 +13893,15 @@ var ChangelogGenerator = class {
       }
       const sections = this.organizeCommits(commits);
       const content = this.generateChangelogContent(sections);
-      const changelogPath = path7__default.join(this.config.rootPath, "CHANGELOG.md");
+      const changelogPath = path10__default.join(this.config.rootPath, "CHANGELOG.md");
       const exists = existsSync(changelogPath);
       if (exists) {
-        const existingContent = await ops6.promises.readFile(changelogPath, "utf-8");
+        const existingContent = await ops9.promises.readFile(changelogPath, "utf-8");
         const newContent = content + "\n\n" + existingContent;
-        await ops6.promises.writeFile(changelogPath, newContent);
+        await ops9.promises.writeFile(changelogPath, newContent);
       } else {
         const fullContent = this.generateChangelogHeader() + content;
-        await ops6.promises.writeFile(changelogPath, fullContent);
+        await ops9.promises.writeFile(changelogPath, fullContent);
       }
       return {
         success: true,
@@ -12740,7 +14105,7 @@ var UpdateAgentDocs = class {
   }
   async updateDocs() {
     try {
-      const agentPath = path7__default.join(this.config.rootPath, ".agent");
+      const agentPath = path10__default.join(this.config.rootPath, ".agent");
       if (!existsSync(agentPath)) {
         return {
           success: false,
@@ -12827,15 +14192,15 @@ var UpdateAgentDocs = class {
     const recentFiles = [];
     const scanDir = async (dirPath) => {
       try {
-        const entries = await ops6.promises.readdir(dirPath, { withFileTypes: true });
+        const entries = await ops9.promises.readdir(dirPath, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path7__default.join(dirPath, entry.name);
+          const fullPath = path10__default.join(dirPath, entry.name);
           if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
             await scanDir(fullPath);
           } else if (entry.isFile()) {
-            const stats = await ops6.promises.stat(fullPath);
+            const stats = await ops9.promises.stat(fullPath);
             if (stats.mtime.getTime() > oneDayAgo) {
-              recentFiles.push(path7__default.relative(this.config.rootPath, fullPath));
+              recentFiles.push(path10__default.relative(this.config.rootPath, fullPath));
             }
           }
         }
@@ -12884,14 +14249,14 @@ var UpdateAgentDocs = class {
   }
   async updateSystemDocs(analysis) {
     const updatedFiles = [];
-    const systemPath = path7__default.join(this.config.rootPath, ".agent", "system");
+    const systemPath = path10__default.join(this.config.rootPath, ".agent", "system");
     if (analysis.architectureChanges) {
       try {
-        const archPath = path7__default.join(systemPath, "architecture.md");
+        const archPath = path10__default.join(systemPath, "architecture.md");
         if (existsSync(archPath)) {
-          const content = await ops6.promises.readFile(archPath, "utf-8");
+          const content = await ops9.promises.readFile(archPath, "utf-8");
           const updatedContent = await this.updateArchitectureDoc(content, analysis);
-          await ops6.promises.writeFile(archPath, updatedContent);
+          await ops9.promises.writeFile(archPath, updatedContent);
           updatedFiles.push(".agent/system/architecture.md");
         }
       } catch (error) {
@@ -12901,11 +14266,11 @@ var UpdateAgentDocs = class {
   }
   async updateCriticalState(analysis) {
     try {
-      const criticalStatePath = path7__default.join(this.config.rootPath, ".agent", "system", "critical-state.md");
+      const criticalStatePath = path10__default.join(this.config.rootPath, ".agent", "system", "critical-state.md");
       if (!existsSync(criticalStatePath)) {
         return false;
       }
-      const content = await ops6.promises.readFile(criticalStatePath, "utf-8");
+      const content = await ops9.promises.readFile(criticalStatePath, "utf-8");
       const timestamp = (/* @__PURE__ */ new Date()).toISOString();
       const changesSummary = this.generateChangesSummary(analysis);
       let updatedContent = content.replace(
@@ -12930,7 +14295,7 @@ Updated By: /update-agent-docs after detecting changes${recentChangesSection}`
           );
         }
       }
-      await ops6.promises.writeFile(criticalStatePath, updatedContent);
+      await ops9.promises.writeFile(criticalStatePath, updatedContent);
       return true;
     } catch (error) {
       return false;
@@ -13364,7 +14729,7 @@ This is a generated document for ${projectPath}.
 var SelfHealingSystem = class {
   constructor(rootPath, config2) {
     this.rootPath = rootPath;
-    this.agentPath = path7__default.join(rootPath, ".agent");
+    this.agentPath = path10__default.join(rootPath, ".agent");
     this.config = {
       enabled: true,
       onErrorPrompt: "gentle",
@@ -13376,10 +14741,10 @@ var SelfHealingSystem = class {
   async captureIncident(error, context) {
     try {
       const incident = await this.analyzeAndCreateIncident(error, context);
-      const incidentPath = path7__default.join(this.agentPath, "incidents", `${incident.id}.md`);
-      await ops6.mkdir(path7__default.dirname(incidentPath), { recursive: true });
+      const incidentPath = path10__default.join(this.agentPath, "incidents", `${incident.id}.md`);
+      await ops9.mkdir(path10__default.dirname(incidentPath), { recursive: true });
       const incidentContent = this.generateIncidentContent(incident);
-      await ops6.promises.writeFile(incidentPath, incidentContent);
+      await ops9.promises.writeFile(incidentPath, incidentContent);
       const guardrail = await this.generateGuardrailFromIncident(incident);
       if (guardrail) {
         await this.saveGuardrail(guardrail);
@@ -13505,16 +14870,16 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
   }
   async countPreviousOccurrences(title) {
     try {
-      const incidentsPath = path7__default.join(this.agentPath, "incidents");
+      const incidentsPath = path10__default.join(this.agentPath, "incidents");
       if (!existsSync(incidentsPath)) {
         return 0;
       }
-      const files = await ops6.promises.readdir(incidentsPath);
+      const files = await ops9.promises.readdir(incidentsPath);
       let count = 0;
       for (const file of files) {
         if (file.endsWith(".md")) {
-          const filePath = path7__default.join(incidentsPath, file);
-          const content = await ops6.promises.readFile(filePath, "utf-8");
+          const filePath = path10__default.join(incidentsPath, file);
+          const content = await ops9.promises.readFile(filePath, "utf-8");
           if (content.includes(title)) {
             count++;
           }
@@ -13606,11 +14971,11 @@ ${incident.guardrailCreated ? `Guardrail created: ${incident.guardrailCreated}` 
     return null;
   }
   async saveGuardrail(guardrail) {
-    const guardrailsPath = path7__default.join(this.agentPath, "guardrails");
-    await ops6.mkdir(guardrailsPath, { recursive: true });
-    const filePath = path7__default.join(guardrailsPath, `${guardrail.id}.md`);
+    const guardrailsPath = path10__default.join(this.agentPath, "guardrails");
+    await ops9.mkdir(guardrailsPath, { recursive: true });
+    const filePath = path10__default.join(guardrailsPath, `${guardrail.id}.md`);
     const content = this.generateGuardrailContent(guardrail);
-    await ops6.promises.writeFile(filePath, content);
+    await ops9.promises.writeFile(filePath, content);
   }
   generateGuardrailContent(guardrail) {
     return `# ${guardrail.name}
@@ -13665,16 +15030,16 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     };
   }
   async loadAllGuardrails() {
-    const guardrailsPath = path7__default.join(this.agentPath, "guardrails");
+    const guardrailsPath = path10__default.join(this.agentPath, "guardrails");
     if (!existsSync(guardrailsPath)) {
       return [];
     }
-    const files = await ops6.promises.readdir(guardrailsPath);
+    const files = await ops9.promises.readdir(guardrailsPath);
     const guardrails = [];
     for (const file of files) {
       if (file.endsWith(".md")) {
         try {
-          const content = await ops6.promises.readFile(path7__default.join(guardrailsPath, file), "utf-8");
+          const content = await ops9.promises.readFile(path10__default.join(guardrailsPath, file), "utf-8");
           const guardrail = this.parseGuardrailFromContent(content);
           if (guardrail) {
             guardrails.push(guardrail);
@@ -13730,16 +15095,16 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     return `incident_${timestamp}_${random}`;
   }
   async listIncidents() {
-    const incidentsPath = path7__default.join(this.agentPath, "incidents");
+    const incidentsPath = path10__default.join(this.agentPath, "incidents");
     if (!existsSync(incidentsPath)) {
       return [];
     }
-    const files = await ops6.promises.readdir(incidentsPath);
+    const files = await ops9.promises.readdir(incidentsPath);
     const incidents = [];
     for (const file of files) {
       if (file.endsWith(".md")) {
         try {
-          const content = await ops6.promises.readFile(path7__default.join(incidentsPath, file), "utf-8");
+          const content = await ops9.promises.readFile(path10__default.join(incidentsPath, file), "utf-8");
           const incident = this.parseIncidentFromContent(content);
           if (incident) {
             incidents.push(incident);
@@ -14412,7 +15777,7 @@ Executing: \`${docsMenuOption.command}\`...`,
         }
         const commentType = args.includes("--functions") ? "functions" : args.includes("--classes") ? "classes" : "all";
         const generator = new CommentsGenerator({
-          filePath: filePath.startsWith("/") ? filePath : path7__default.join(process.cwd(), filePath),
+          filePath: filePath.startsWith("/") ? filePath : path10__default.join(process.cwd(), filePath),
           commentType,
           style: "auto"
         });

@@ -6,11 +6,10 @@
 
 import { TaskAnalyzer } from './task-analyzer.js';
 import { RiskAssessor } from './risk-assessor.js';
-import { 
-  TaskPlan, 
-  TaskStep, 
-  TaskStepType, 
-  RiskLevel, 
+import {
+  TaskPlan,
+  TaskStep,
+  RiskLevel,
   PlanValidationResult,
   PlannerConfig,
   TaskAnalysis
@@ -362,14 +361,14 @@ export class TaskPlanner {
   private calculateOverallRisk(steps: TaskStep[]): RiskLevel {
     const riskScores = { low: 1, medium: 2, high: 3, critical: 4 };
     const maxRisk = Math.max(...steps.map(s => riskScores[s.riskLevel]));
-    
+
     if (maxRisk >= 4) return 'critical';
     if (maxRisk >= 3) return 'high';
     if (maxRisk >= 2) return 'medium';
     return 'low';
   }
 
-  private detectCircularDependencies(steps: TaskStep[]): string[] {
+  private detectCircularDependencies(_steps: TaskStep[]): string[] {
     // Simple cycle detection - would need more sophisticated algorithm for production
     return [];
   }
@@ -391,14 +390,14 @@ export class TaskPlanner {
 
   private estimateSuccessRate(plan: TaskPlan, errors: string[], warnings: string[]): number {
     let rate = 100;
-    
+
     rate -= errors.length * 20;
     rate -= warnings.length * 5;
-    
+
     if (plan.overallRiskLevel === 'critical') rate -= 30;
     else if (plan.overallRiskLevel === 'high') rate -= 15;
     else if (plan.overallRiskLevel === 'medium') rate -= 5;
-    
+
     return Math.max(0, Math.min(100, rate));
   }
 }

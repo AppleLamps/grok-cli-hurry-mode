@@ -183,7 +183,7 @@ export class PlanExecutor extends EventEmitter {
           const content = await fs.promises.readFile(filePath, 'utf-8');
           fileSnapshots.set(filePath, content);
         }
-      } catch (error) {
+      } catch (_error) {
         // File might not exist yet, skip
       }
     }

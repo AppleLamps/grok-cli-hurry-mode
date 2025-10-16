@@ -7,7 +7,6 @@
 import { CodeIntelligenceEngine } from '../tools/intelligence/engine.js';
 import { DependencyAnalyzerTool } from '../tools/intelligence/dependency-analyzer.js';
 import { TaskAnalysis } from './types.js';
-import path from 'path';
 
 export class TaskAnalyzer {
   private intelligenceEngine: CodeIntelligenceEngine;
@@ -21,7 +20,7 @@ export class TaskAnalyzer {
   /**
    * Analyze a user request to understand what needs to be done
    */
-  async analyzeRequest(userRequest: string, context?: { currentDirectory?: string }): Promise<TaskAnalysis> {
+  async analyzeRequest(userRequest: string, _context?: { currentDirectory?: string }): Promise<TaskAnalysis> {
     const intent = this.extractIntent(userRequest);
     const scope = await this.determineScope(userRequest, context);
     const complexity = this.assessComplexity(userRequest, scope);
@@ -87,7 +86,7 @@ export class TaskAnalyzer {
 
     // Extract file patterns from request
     const filePatterns = this.extractFilePatterns(request);
-    
+
     // Extract symbol names from request
     const symbolNames = this.extractSymbolNames(request);
     symbols.push(...symbolNames);
@@ -114,13 +113,13 @@ export class TaskAnalyzer {
       for (const file of files) {
         const deps = this.intelligenceEngine.getDependencies(file);
         const dependents = this.intelligenceEngine.getDependents(file);
-        
+
         deps.forEach(dep => {
           if (!dependencies.includes(dep)) {
             dependencies.push(dep);
           }
         });
-        
+
         dependents.forEach(dep => {
           if (!dependencies.includes(dep)) {
             dependencies.push(dep);
@@ -137,7 +136,7 @@ export class TaskAnalyzer {
    */
   private extractFilePatterns(request: string): string[] {
     const patterns: string[] = [];
-    
+
     // Match file paths (e.g., src/tools/file.ts)
     const filePathRegex = /(?:^|\s)([a-zA-Z0-9_\-./]+\.[a-z]{2,4})(?:\s|$)/g;
     let match;
@@ -159,7 +158,7 @@ export class TaskAnalyzer {
    */
   private extractSymbolNames(request: string): string[] {
     const symbols: string[] = [];
-    
+
     // Match PascalCase (classes, interfaces)
     const pascalCaseRegex = /\b([A-Z][a-zA-Z0-9]*(?:[A-Z][a-zA-Z0-9]*)+)\b/g;
     let match;
@@ -243,7 +242,7 @@ export class TaskAnalyzer {
   /**
    * Suggest an approach for the task
    */
-  private suggestApproach(intent: string, scope: TaskAnalysis['scope'], complexity: TaskAnalysis['complexity']): string {
+  private suggestApproach(intent: string, _scope: TaskAnalysis['scope'], _complexity: TaskAnalysis['complexity']): string {
     const approaches: Record<string, string> = {
       'refactor': 'Analyze dependencies → Create new structure → Move code → Update imports → Validate',
       'move': 'Identify symbol → Extract code → Update imports → Validate references',
@@ -296,7 +295,7 @@ export class TaskAnalyzer {
   /**
    * Identify required tools
    */
-  private identifyRequiredTools(intent: string, scope: TaskAnalysis['scope']): string[] {
+  private identifyRequiredTools(intent: string, _scope: TaskAnalysis['scope']): string[] {
     const tools: string[] = [];
 
     // Always need code context

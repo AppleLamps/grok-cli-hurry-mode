@@ -31,6 +31,8 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
+import { TaskOrchestrator, OrchestratorResult } from "../planning/task-orchestrator.js";
+import { PlanExecutionProgress } from "../planning/types.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -72,6 +74,7 @@ export class GrokAgent extends EventEmitter {
   private dependencyAnalyzer: DependencyAnalyzerTool;
   private codeContext: CodeContextTool;
   private refactoringAssistant: RefactoringAssistantTool;
+  private taskOrchestrator: TaskOrchestrator;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -83,6 +86,7 @@ export class GrokAgent extends EventEmitter {
   private readonly maxConcurrentToolCalls: number = 2;
   private readonly minRequestInterval: number = 500; // ms
   private sessionLogPath: string;
+  private planExecutionInProgress: boolean = false;
 
   constructor(
     apiKey: string,
@@ -118,6 +122,25 @@ export class GrokAgent extends EventEmitter {
     this.codeContext = new CodeContextTool(this.intelligenceEngine);
     this.refactoringAssistant = new RefactoringAssistantTool(this.intelligenceEngine);
     this.tokenCounter = createTokenCounter(modelToUse);
+
+    // Initialize task orchestrator
+    this.taskOrchestrator = new TaskOrchestrator(process.cwd(), {
+      maxSteps: 50,
+      maxDuration: 300000,
+      allowRiskyOperations: false,
+      requireConfirmation: true,
+      autoRollbackOnFailure: true,
+      parallelExecution: false,
+      maxParallelSteps: 3
+    });
+
+    // Forward orchestrator events
+    this.taskOrchestrator.on('progress', (progress: PlanExecutionProgress) => {
+      this.emit('plan_progress', progress);
+    });
+    this.taskOrchestrator.on('phase', (data: any) => {
+      this.emit('plan_phase', data);
+    });
 
     // Initialize MCP servers if configured
     this.initializeMCP();
@@ -905,7 +928,32 @@ Current working directory: ${process.cwd()}`,
           return await this.refactoringAssistant.execute(args);
 
         case "task_planner":
-          return await this.taskPlanner.execute(args);
+          // Handle task planner operations
+          const plannerResult = await this.taskPlanner.execute(args);
+
+          // If this is a create_plan operation and it succeeded, optionally execute it
+          if (args.operation === 'create_plan' && plannerResult.success && args.autoExecute) {
+            try {
+              const executionResult = await this.planAndExecute(args.userRequest, {
+                currentDirectory: args.currentDirectory
+              });
+
+              return {
+                success: executionResult.success,
+                output: executionResult.success
+                  ? `Plan created and executed successfully!\n\n${JSON.stringify(executionResult, null, 2)}`
+                  : `Plan execution failed: ${executionResult.error}`,
+                error: executionResult.success ? undefined : executionResult.error
+              };
+            } catch (error: any) {
+              return {
+                success: false,
+                error: `Plan execution error: ${error.message}`
+              };
+            }
+          }
+
+          return plannerResult;
 
         default:
           // Check if this is an MCP tool
@@ -1030,5 +1078,117 @@ Current working directory: ${process.cwd()}`,
       // Silently ignore logging errors to avoid disrupting the app
       console.warn('Failed to log session entry:', error);
     }
+  }
+
+  getSessionLogPath(): string {
+    return this.sessionLogPath;
+  }
+
+  /**
+   * Plan and execute a complex task using the task orchestrator
+   */
+  async planAndExecute(userRequest: string, context?: { currentDirectory?: string }): Promise<OrchestratorResult> {
+    if (this.planExecutionInProgress) {
+      throw new Error('A plan is already being executed. Please wait for it to complete.');
+    }
+
+    this.planExecutionInProgress = true;
+
+    try {
+      // Create tool executor that wraps executeTool
+      const toolExecutor = async (toolName: string, args: any): Promise<any> => {
+        // Create a mock tool call for executeTool
+        const toolCall: GrokToolCall = {
+          id: `plan_tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'function',
+          function: {
+            name: toolName,
+            arguments: JSON.stringify(args)
+          }
+        };
+
+        const result = await this.executeTool(toolCall);
+
+        if (!result.success) {
+          throw new Error(result.error || 'Tool execution failed');
+        }
+
+        return result;
+      };
+
+      // Execute plan with confirmation handling
+      const result = await this.executePlanWithConfirmation(userRequest, toolExecutor, context);
+
+      return result;
+    } finally {
+      this.planExecutionInProgress = false;
+    }
+  }
+
+  /**
+   * Execute plan with user confirmation for high-risk operations
+   */
+  private async executePlanWithConfirmation(
+    userRequest: string,
+    toolExecutor: (toolName: string, args: any) => Promise<any>,
+    context?: { currentDirectory?: string }
+  ): Promise<OrchestratorResult> {
+    // First, create and validate the plan
+    const { plan, validation, analysis } = await this.taskOrchestrator.createPlan(userRequest, context);
+
+    // Check if plan is valid
+    if (!validation.isValid) {
+      return {
+        success: false,
+        plan,
+        validation,
+        analysis,
+        error: `Plan validation failed: ${validation.errors.join(', ')}`
+      };
+    }
+
+    // Check if confirmation is required for high-risk operations
+    const requiresConfirmation = plan.overallRiskLevel === 'high' || plan.overallRiskLevel === 'critical';
+
+    if (requiresConfirmation) {
+      // Format plan preview for user
+      const planPreview = this.taskOrchestrator.formatPlanPreview(plan, validation);
+
+      // Request confirmation
+      const confirmationResult = await this.confirmationTool.requestConfirmation({
+        operation: 'Execute Task Plan',
+        filename: `${plan.steps.length} steps affecting ${plan.metadata.filesAffected.length} files`,
+        description: `${plan.description}\n\n${planPreview}`,
+        showVSCodeOpen: false,
+        autoAccept: false
+      });
+
+      if (!confirmationResult.success) {
+        return {
+          success: false,
+          plan,
+          validation,
+          analysis,
+          error: 'User declined to execute the plan'
+        };
+      }
+    }
+
+    // Execute the plan
+    return await this.taskOrchestrator.planAndExecute(userRequest, toolExecutor, context);
+  }
+
+  /**
+   * Get the task orchestrator instance
+   */
+  getTaskOrchestrator(): TaskOrchestrator {
+    return this.taskOrchestrator;
+  }
+
+  /**
+   * Check if a plan execution is in progress
+   */
+  isPlanExecutionInProgress(): boolean {
+    return this.planExecutionInProgress;
   }
 }

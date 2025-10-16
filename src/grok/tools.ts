@@ -539,6 +539,10 @@ const BASE_GROK_TOOLS: GrokTool[] = [
           autoRollback: {
             type: "boolean",
             description: "Automatically rollback on failure (default: true)"
+          },
+          autoExecute: {
+            type: "boolean",
+            description: "Automatically execute the plan after creation (only for create_plan operation). User will be prompted for confirmation if the plan is high-risk. (default: false)"
           }
         },
         required: ["operation", "userRequest"]

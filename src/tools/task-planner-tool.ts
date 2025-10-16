@@ -6,7 +6,6 @@
 
 import { ToolResult } from '../types/index.js';
 import { TaskOrchestrator } from '../planning/index.js';
-import { TaskPlan, PlanValidationResult } from '../planning/types.js';
 
 export class TaskPlannerTool {
   private orchestrator: TaskOrchestrator;
@@ -49,13 +48,13 @@ export class TaskPlannerTool {
       switch (operation) {
         case 'create_plan':
           return await this.createPlan(userRequest, currentDirectory);
-        
+
         case 'preview_plan':
           return await this.previewPlan(userRequest, currentDirectory);
-        
+
         case 'validate_plan':
           return await this.validatePlan(userRequest, currentDirectory);
-        
+
         default:
           return {
             success: false,

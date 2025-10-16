@@ -161,11 +161,11 @@ function ChatInterfaceWithAgent({
               setChatHistory((prev) =>
                 prev.map((entry) =>
                   entry.isStreaming
-                    ? {
-                        ...entry,
-                        isStreaming: false,
-                        toolCalls: pendingToolCalls,
-                      }
+                    ? ({
+                      ...entry,
+                      isStreaming: false,
+                      toolCalls: pendingToolCalls || undefined,
+                    } as ChatEntry)
                     : entry
                 )
               );
@@ -337,7 +337,7 @@ function ChatInterfaceWithAgent({
       {chatHistory.length === 0 && !confirmationOptions && (
         <Box flexDirection="column" marginBottom={2}>
           <Text color="cyan" bold>
-{`    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
+            {`    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
                dBP   dB'.BP  dBP.d8P                            
   dBBBB    dBBBBK'  dB'.BP  dBBBBP'          dBP    dBP    dBP  
  dB' BB   dBP  BB  dB'.BP  dBP BB  dBBBBBP  dBP    dBP    dBP   

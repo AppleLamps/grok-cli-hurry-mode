@@ -419,9 +419,8 @@ Available models: ${modelNames.join(", ")}`,
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
             type: "assistant",
-            content: `Failed to stage changes: ${
-              addResult.error || "Unknown error"
-            }`,
+            content: `Failed to stage changes: ${addResult.error || "Unknown error"
+              }`,
             timestamp: new Date(),
           };
           setChatHistory((prev) => [...prev, addErrorEntry]);
@@ -490,9 +489,9 @@ Respond with ONLY the commit message, no additional text.`;
                   prev.map((entry, idx) =>
                     idx === prev.length - 1 && entry.isStreaming
                       ? {
-                          ...entry,
-                          content: `Generating commit message...\n\n${commitMessage}`,
-                        }
+                        ...entry,
+                        content: `Generating commit message...\n\n${commitMessage}`,
+                      }
                       : entry
                   )
                 );
@@ -506,10 +505,10 @@ Respond with ONLY the commit message, no additional text.`;
                 prev.map((entry) =>
                   entry.isStreaming
                     ? {
-                        ...entry,
-                        content: `Generated commit message: "${commitMessage.trim()}"`,
-                        isStreaming: false,
-                      }
+                      ...entry,
+                      content: `Generated commit message: "${commitMessage.trim()}"`,
+                      isStreaming: false,
+                    }
                     : entry
                 )
               );
@@ -602,9 +601,9 @@ Respond with ONLY the commit message, no additional text.`;
 
       try {
         // Determine project type - assume external project for now, could detect Grok CLI
-        const isGrokCli = process.cwd().includes('grok-cli') || 
-                         trimmedInput.includes('--grok');
-        
+        const isGrokCli = process.cwd().includes('grok-cli') ||
+          trimmedInput.includes('--grok');
+
         const projectType = isGrokCli ? 'grok-cli' : 'external';
         const projectName = isGrokCli ? 'Grok CLI' : 'Current Project';
 
@@ -677,7 +676,7 @@ Respond with ONLY the commit message, no additional text.`;
     const docsMenuOption = findDocsMenuOption(trimmedInput);
     if (docsMenuOption) {
       const userEntry: ChatEntry = {
-        type: "user", 
+        type: "user",
         content: trimmedInput,
         timestamp: new Date(),
       };
@@ -749,7 +748,7 @@ Respond with ONLY the commit message, no additional text.`;
 
       } catch (error: any) {
         const errorEntry: ChatEntry = {
-          type: "assistant", 
+          type: "assistant",
           content: `Failed to generate README: ${error.message}`,
           timestamp: new Date(),
         };
@@ -787,8 +786,8 @@ Respond with ONLY the commit message, no additional text.`;
           return true;
         }
 
-        const commentType = args.includes('--functions') ? 'functions' : 
-                           args.includes('--classes') ? 'classes' : 'all';
+        const commentType = args.includes('--functions') ? 'functions' :
+          args.includes('--classes') ? 'classes' : 'all';
 
         const generator = new CommentsGenerator({
           filePath: filePath.startsWith('/') ? filePath : path.join(process.cwd(), filePath),
@@ -979,8 +978,8 @@ Respond with ONLY the commit message, no additional text.`;
       try {
         const args = trimmedInput.split(' ').slice(1);
         const updateTarget = args.includes('--system') ? 'system' :
-                            args.includes('--tasks') ? 'tasks' :
-                            args.includes('--sop') ? 'sop' : 'all';
+          args.includes('--tasks') ? 'tasks' :
+            args.includes('--sop') ? 'sop' : 'all';
         const autoCommit = args.includes('--commit');
 
         const updater = new UpdateAgentDocs({
@@ -1051,10 +1050,10 @@ Respond with ONLY the commit message, no additional text.`;
 
         if (result.success) {
           // const metrics = subagentFramework.getPerformanceMetrics(); // TODO: use metrics
-          
+
           const resultEntry: ChatEntry = {
             type: "assistant",
-            content: dryRun 
+            content: dryRun
               ? `📊 **Compression Preview (Dry Run)**\n\n${result.summary}\n\n💡 Use \`/compact\` to apply compression`
               : `🧹 **Context Compressed Successfully**\n\n${result.summary}\n\n📈 **Performance:**\n- Tokens saved: ~${result.output.compressionRatio * 100}%\n- Processing time: ${result.executionTime}ms\n- Subagent tokens used: ${result.tokensUsed}`,
             timestamp: new Date(),
@@ -1191,7 +1190,7 @@ Respond with ONLY the commit message, no additional text.`;
           // List all guardrails
           const incidents = await healingSystem.listIncidents();
           const config = healingSystem.getConfig();
-          
+
           const resultEntry: ChatEntry = {
             type: "assistant",
             content: `🛡️ **Guardrails Management**
@@ -1343,11 +1342,11 @@ ${incidents.slice(0, 3).map(i => `- ${i.title} (${i.impact} impact)`).join('\n')
           setChatHistory((prev) =>
             prev.map((entry) =>
               entry.isStreaming
-                ? {
-                    ...entry,
-                    isStreaming: false,
-                    toolCalls: pendingToolCalls,
-                  }
+                ? ({
+                  ...entry,
+                  isStreaming: false,
+                  toolCalls: pendingToolCalls || undefined,
+                } as ChatEntry)
                 : entry
             )
           );

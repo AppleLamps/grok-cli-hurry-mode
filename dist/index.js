@@ -14903,7 +14903,7 @@ ${incidents.slice(0, 3).map((i) => `- ${i.title} (${i.impact} impact)`).join("\n
               (entry) => entry.isStreaming ? {
                 ...entry,
                 isStreaming: false,
-                toolCalls: pendingToolCalls
+                toolCalls: pendingToolCalls || void 0
               } : entry
             )
           );
@@ -15850,7 +15850,7 @@ function ChatInterfaceWithAgent({
                   (entry) => entry.isStreaming ? {
                     ...entry,
                     isStreaming: false,
-                    toolCalls: pendingToolCalls
+                    toolCalls: pendingToolCalls || void 0
                   } : entry
                 )
               );

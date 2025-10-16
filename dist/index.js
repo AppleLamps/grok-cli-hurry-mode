@@ -17,7 +17,6 @@ import { exec, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import { writeFile } from 'fs/promises';
 import * as ops6 from 'fs-extra';
-import { parse } from '@typescript-eslint/typescript-estree';
 import Fuse from 'fuse.js';
 import { glob } from 'glob';
 import { encoding_for_model, get_encoding } from 'tiktoken';
@@ -5877,18 +5876,6 @@ ${errors.join("\n")}`;
     };
   }
 };
-var Parser;
-var JavaScript;
-var TypeScript;
-var Python;
-try {
-  Parser = __require("tree-sitter");
-  JavaScript = __require("tree-sitter-javascript");
-  TypeScript = __require("tree-sitter-typescript");
-  Python = __require("tree-sitter-python");
-} catch (error) {
-  console.warn("Tree-sitter modules not available, falling back to TypeScript-only parsing");
-}
 var pathExists8 = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
@@ -5898,37 +5885,11 @@ var pathExists8 = async (filePath) => {
   }
 };
 var ASTParserTool = class {
-  constructor() {
+  constructor(engine) {
     this.name = "ast_parser";
     this.description = "Parse source code files to extract AST, symbols, imports, exports, and structural information";
-    this.parsers = /* @__PURE__ */ new Map();
-    this.initializeParsers();
-  }
-  initializeParsers() {
-    if (!Parser || !JavaScript || !TypeScript || !Python) {
-      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
-      return;
-    }
-    try {
-      const jsParser = new Parser();
-      jsParser.setLanguage(JavaScript);
-      this.parsers.set("javascript", jsParser);
-      this.parsers.set("js", jsParser);
-      this.parsers.set("jsx", jsParser);
-      const tsParser = new Parser();
-      tsParser.setLanguage(TypeScript.typescript);
-      this.parsers.set("typescript", tsParser);
-      this.parsers.set("ts", tsParser);
-      const tsxParser = new Parser();
-      tsxParser.setLanguage(TypeScript.tsx);
-      this.parsers.set("tsx", tsxParser);
-      const pyParser = new Parser();
-      pyParser.setLanguage(Python);
-      this.parsers.set("python", pyParser);
-      this.parsers.set("py", pyParser);
-    } catch (error) {
-      console.warn("Failed to initialize some parsers:", error);
-    }
+    this.engine = null;
+    this.engine = engine || null;
   }
   detectLanguage(filePath) {
     const ext = path7__default.extname(filePath).slice(1).toLowerCase();
@@ -5967,44 +5928,51 @@ var ASTParserTool = class {
       if (!await pathExists8(filePath)) {
         throw new Error(`File not found: ${filePath}`);
       }
+      if (this.engine && this.engine.isReady()) {
+        const metadata = this.engine.getFileMetadata(filePath);
+        const ast = includeTree ? this.engine.getAST(filePath) : null;
+        const fileSymbols = includeSymbols ? this.engine.getFileSymbols(filePath) : [];
+        let symbols = fileSymbols;
+        if (includeSymbols) {
+          symbols = symbols.filter(
+            (symbol) => symbolTypes.includes(symbol.type) && (scope === "all" || this.matchesScope(symbol, scope))
+          );
+        }
+        const imports = [];
+        const exports = [];
+        return {
+          success: true,
+          output: JSON.stringify({
+            filePath: metadata?.filePath || path7__default.basename(filePath),
+            language: metadata?.language || "unknown",
+            symbolCount: symbols.length,
+            importCount: imports.length,
+            exportCount: exports.length,
+            errorCount: 0,
+            ...includeSymbols && { symbols },
+            ...includeImports && { imports, exports },
+            ...includeTree && ast && { tree: ast },
+            cached: true
+            // Indicate this came from engine cache
+          }, null, 2)
+        };
+      }
       const content = await fs.promises.readFile(filePath, "utf-8");
       const language = this.detectLanguage(filePath);
-      let result;
-      if (language === "typescript" || language === "tsx") {
-        result = await this.parseWithTypeScript(content, language, filePath);
-      } else {
-        result = await this.parseWithTreeSitter(content, language, filePath);
-      }
-      if (!includeSymbols) {
-        result.symbols = [];
-      } else {
-        result.symbols = result.symbols.filter(
-          (symbol) => symbolTypes.includes(symbol.type) && (scope === "all" || this.matchesScope(symbol, scope))
-        );
-      }
-      if (!includeImports) {
-        result.imports = [];
-        result.exports = [];
-      }
-      if (!includeTree) {
-        result.tree = { type: "program", text: "", startPosition: { row: 0, column: 0 }, endPosition: { row: 0, column: 0 } };
-      }
       return {
         success: true,
         output: JSON.stringify({
-          filePath,
-          language: result.language,
-          symbolCount: result.symbols.length,
-          importCount: result.imports.length,
-          exportCount: result.exports.length,
-          errorCount: result.errors.length,
-          ...includeSymbols && { symbols: result.symbols },
-          ...includeImports && {
-            imports: result.imports,
-            exports: result.exports
-          },
-          ...includeTree && { tree: result.tree },
-          ...result.errors.length > 0 && { errors: result.errors }
+          filePath: path7__default.basename(filePath),
+          language,
+          symbolCount: 0,
+          importCount: 0,
+          exportCount: 0,
+          errorCount: 0,
+          symbols: [],
+          imports: [],
+          exports: [],
+          cached: false,
+          note: "Engine not initialized - minimal parsing performed"
         }, null, 2)
       };
     } catch (error) {
@@ -6012,441 +5980,6 @@ var ASTParserTool = class {
         success: false,
         error: error instanceof Error ? error.message : String(error)
       };
-    }
-  }
-  async parseWithTypeScript(content, language, filePath) {
-    const errors = [];
-    try {
-      const ast = parse(content, {
-        jsx: language === "tsx",
-        loc: true,
-        range: true,
-        comment: true,
-        attachComments: true,
-        errorOnUnknownASTType: false,
-        errorOnTypeScriptSyntacticAndSemanticIssues: false
-      });
-      const symbols = this.extractTypeScriptSymbols(ast, content);
-      const imports = this.extractTypeScriptImports(ast);
-      const exports = this.extractTypeScriptExports(ast);
-      const tree = this.convertTypeScriptAST(ast);
-      return {
-        language,
-        tree,
-        symbols,
-        imports,
-        exports,
-        errors
-      };
-    } catch (error) {
-      errors.push({
-        message: error instanceof Error ? error.message : String(error),
-        line: 0,
-        column: 0,
-        severity: "error"
-      });
-      return this.parseWithTreeSitter(content, language, filePath);
-    }
-  }
-  async parseWithTreeSitter(content, language, filePath) {
-    const parser = this.parsers.get(language);
-    if (!parser) {
-      if (language === "typescript" || language === "ts" || language === "javascript" || language === "js") {
-        return await this.parseWithTypeScript(content, language, filePath);
-      }
-      throw new Error(`Unsupported language: ${language}`);
-    }
-    const tree = parser.parse(content);
-    const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
-    const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
-    const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
-    const astTree = this.convertTreeSitterAST(tree.rootNode, content);
-    return {
-      language,
-      tree: astTree,
-      symbols,
-      imports,
-      exports,
-      errors: []
-    };
-  }
-  extractTypeScriptSymbols(ast, content) {
-    const symbols = [];
-    content.split("\n");
-    const visit = (node, scope = "global") => {
-      if (!node) return;
-      const getPosition = (pos) => ({
-        row: pos.line - 1,
-        column: pos.column
-      });
-      switch (node.type) {
-        case "FunctionDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "function",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope,
-              isAsync: node.async,
-              parameters: node.params?.map((param) => ({
-                name: param.name || param.left?.name || "unknown",
-                type: param.typeAnnotation?.typeAnnotation?.type,
-                optional: param.optional
-              })) || []
-            });
-          }
-          break;
-        case "ClassDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "class",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          node.body?.body?.forEach((member) => {
-            if (member.type === "MethodDefinition" && member.key?.name) {
-              symbols.push({
-                name: member.key.name,
-                type: "method",
-                startPosition: getPosition(member.loc.start),
-                endPosition: getPosition(member.loc.end),
-                scope: `${node.id?.name || "unknown"}.${member.key.name}`,
-                accessibility: member.accessibility,
-                isStatic: member.static,
-                isAsync: member.value?.async
-              });
-            }
-          });
-          break;
-        case "VariableDeclaration":
-          node.declarations?.forEach((decl) => {
-            if (decl.id?.name) {
-              symbols.push({
-                name: decl.id.name,
-                type: "variable",
-                startPosition: getPosition(decl.loc.start),
-                endPosition: getPosition(decl.loc.end),
-                scope
-              });
-            }
-          });
-          break;
-        case "TSInterfaceDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "interface",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-        case "TSEnumDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "enum",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-        case "TSTypeAliasDeclaration":
-          if (node.id?.name) {
-            symbols.push({
-              name: node.id.name,
-              type: "type",
-              startPosition: getPosition(node.loc.start),
-              endPosition: getPosition(node.loc.end),
-              scope
-            });
-          }
-          break;
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild, scope);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child, scope);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return symbols;
-  }
-  extractTypeScriptImports(ast) {
-    const imports = [];
-    const visit = (node) => {
-      if (node.type === "ImportDeclaration") {
-        const specifiers = [];
-        node.specifiers?.forEach((spec) => {
-          switch (spec.type) {
-            case "ImportDefaultSpecifier":
-              specifiers.push({
-                name: spec.local.name,
-                isDefault: true
-              });
-              break;
-            case "ImportNamespaceSpecifier":
-              specifiers.push({
-                name: spec.local.name,
-                isNamespace: true
-              });
-              break;
-            case "ImportSpecifier":
-              specifiers.push({
-                name: spec.imported.name,
-                alias: spec.local.name !== spec.imported.name ? spec.local.name : void 0
-              });
-              break;
-          }
-        });
-        imports.push({
-          source: node.source.value,
-          specifiers,
-          isTypeOnly: node.importKind === "type",
-          startPosition: {
-            row: node.loc.start.line - 1,
-            column: node.loc.start.column
-          }
-        });
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return imports;
-  }
-  extractTypeScriptExports(ast) {
-    const exports = [];
-    const visit = (node) => {
-      switch (node.type) {
-        case "ExportNamedDeclaration":
-          if (node.declaration) {
-            if (node.declaration.id?.name) {
-              exports.push({
-                name: node.declaration.id.name,
-                type: this.getDeclarationType(node.declaration.type),
-                startPosition: {
-                  row: node.loc.start.line - 1,
-                  column: node.loc.start.column
-                }
-              });
-            }
-          } else if (node.specifiers) {
-            node.specifiers.forEach((spec) => {
-              exports.push({
-                name: spec.exported.name,
-                type: "variable",
-                // Default to variable
-                startPosition: {
-                  row: node.loc.start.line - 1,
-                  column: node.loc.start.column
-                },
-                source: node.source?.value
-              });
-            });
-          }
-          break;
-        case "ExportDefaultDeclaration":
-          const name = node.declaration?.id?.name || "default";
-          exports.push({
-            name,
-            type: this.getDeclarationType(node.declaration?.type) || "default",
-            startPosition: {
-              row: node.loc.start.line - 1,
-              column: node.loc.start.column
-            },
-            isDefault: true
-          });
-          break;
-      }
-      for (const key in node) {
-        if (key !== "parent" && key !== "loc" && key !== "range") {
-          const child = node[key];
-          if (Array.isArray(child)) {
-            child.forEach((grandchild) => {
-              if (grandchild && typeof grandchild === "object") {
-                visit(grandchild);
-              }
-            });
-          } else if (child && typeof child === "object") {
-            visit(child);
-          }
-        }
-      }
-    };
-    visit(ast);
-    return exports;
-  }
-  extractTreeSitterSymbols(node, content, language) {
-    const symbols = [];
-    content.split("\n");
-    const visit = (node2, scope = "global") => {
-      content.slice(node2.startIndex, node2.endIndex);
-      const startPos = { row: node2.startPosition.row, column: node2.startPosition.column };
-      const endPos = { row: node2.endPosition.row, column: node2.endPosition.column };
-      switch (node2.type) {
-        case "function_declaration":
-        case "function_definition":
-          const funcName = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
-          if (funcName) {
-            symbols.push({
-              name: funcName,
-              type: "function",
-              startPosition: startPos,
-              endPosition: endPos,
-              scope
-            });
-          }
-          break;
-        case "class_declaration":
-        case "class_definition":
-          const className = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
-          if (className) {
-            symbols.push({
-              name: className,
-              type: "class",
-              startPosition: startPos,
-              endPosition: endPos,
-              scope
-            });
-          }
-          break;
-        case "variable_declaration":
-        case "lexical_declaration":
-          node2.children?.forEach((child) => {
-            if (child.type === "variable_declarator") {
-              const varName = this.extractNodeName(child, "name") || this.extractNodeName(child, "identifier");
-              if (varName) {
-                symbols.push({
-                  name: varName,
-                  type: "variable",
-                  startPosition: { row: child.startPosition.row, column: child.startPosition.column },
-                  endPosition: { row: child.endPosition.row, column: child.endPosition.column },
-                  scope
-                });
-              }
-            }
-          });
-          break;
-      }
-      node2.children?.forEach((child) => visit(child, scope));
-    };
-    visit(node);
-    return symbols;
-  }
-  extractTreeSitterImports(node, content, language) {
-    const imports = [];
-    const visit = (node2) => {
-      if (node2.type === "import_statement" || node2.type === "import_from_statement") {
-        const sourceNode = node2.children?.find(
-          (child) => child.type === "string" || child.type === "string_literal"
-        );
-        if (sourceNode) {
-          const source = content.slice(sourceNode.startIndex + 1, sourceNode.endIndex - 1);
-          imports.push({
-            source,
-            specifiers: [],
-            // Simplified for tree-sitter
-            startPosition: {
-              row: node2.startPosition.row,
-              column: node2.startPosition.column
-            }
-          });
-        }
-      }
-      node2.children?.forEach((child) => visit(child));
-    };
-    visit(node);
-    return imports;
-  }
-  extractTreeSitterExports(node, content, language) {
-    const exports = [];
-    const visit = (node2) => {
-      if (node2.type === "export_statement") {
-        const name = this.extractNodeName(node2, "name") || "unknown";
-        exports.push({
-          name,
-          type: "variable",
-          startPosition: {
-            row: node2.startPosition.row,
-            column: node2.startPosition.column
-          }
-        });
-      }
-      node2.children?.forEach((child) => visit(child));
-    };
-    visit(node);
-    return exports;
-  }
-  convertTypeScriptAST(node) {
-    return {
-      type: node.type,
-      text: "",
-      startPosition: { row: node.loc?.start?.line - 1 || 0, column: node.loc?.start?.column || 0 },
-      endPosition: { row: node.loc?.end?.line - 1 || 0, column: node.loc?.end?.column || 0 },
-      children: []
-    };
-  }
-  convertTreeSitterAST(node, content) {
-    const children = [];
-    if (node.children) {
-      for (const child of node.children) {
-        children.push(this.convertTreeSitterAST(child, content));
-      }
-    }
-    return {
-      type: node.type,
-      text: content.slice(node.startIndex, node.endIndex),
-      startPosition: { row: node.startPosition.row, column: node.startPosition.column },
-      endPosition: { row: node.endPosition.row, column: node.endPosition.column },
-      children
-    };
-  }
-  extractNodeName(node, nameField) {
-    const nameNode = node.children?.find((child) => child.type === nameField);
-    return nameNode ? nameNode.text : null;
-  }
-  getDeclarationType(nodeType) {
-    switch (nodeType) {
-      case "FunctionDeclaration":
-        return "function";
-      case "ClassDeclaration":
-        return "class";
-      case "TSInterfaceDeclaration":
-        return "interface";
-      case "TSEnumDeclaration":
-        return "enum";
-      case "TSTypeAliasDeclaration":
-        return "type";
-      default:
-        return "variable";
     }
   }
   matchesScope(symbol, scope) {
@@ -9273,7 +8806,7 @@ EOF`;
 
 // package.json
 var package_default = {
-  version: "1.0.47"};
+  version: "1.0.49"};
 
 // src/utils/text-utils.ts
 function isWordBoundary(char) {
@@ -13644,7 +13177,6 @@ ${result.suggestions.map((s) => `- ${s}`).join("\n")}
       setIsProcessing(true);
       try {
         const args = trimmedInput.split(" ").slice(1);
-        const force = args.includes("--force");
         const dryRun = args.includes("--dry-run");
         const subagentFramework = new SubagentFramework();
         const taskId = await subagentFramework.spawnSubagent({
@@ -13658,7 +13190,6 @@ ${result.suggestions.map((s) => `- ${s}`).join("\n")}
         });
         const result = await subagentFramework.waitForResult(taskId, 1e4);
         if (result.success) {
-          const metrics = subagentFramework.getPerformanceMetrics();
           const resultEntry = {
             type: "assistant",
             content: dryRun ? `\u{1F4CA} **Compression Preview (Dry Run)**
@@ -13715,9 +13246,6 @@ ${result.summary}
       setChatHistory((prev) => [...prev, userEntry]);
       setIsProcessing(true);
       try {
-        const args = trimmedInput.split(" ").slice(1);
-        const classify = args.includes("--classify");
-        const playbook = args.includes("--playbook");
         const healingSystem = new SelfHealingSystem(process.cwd());
         const mockError = {
           message: "Example error for demonstration",
@@ -13781,8 +13309,6 @@ ${result.summary}
       try {
         const args = trimmedInput.split(" ").slice(1);
         const check = args.includes("--check");
-        const enable = args.find((arg) => arg.startsWith("--enable"))?.split("=")[1];
-        const disable = args.find((arg) => arg.startsWith("--disable"))?.split("=")[1];
         const healingSystem = new SelfHealingSystem(process.cwd());
         if (check) {
           const checkResult = await healingSystem.checkGuardrails("example-operation", {});
@@ -15327,7 +14853,7 @@ process.on("SIGTERM", () => {
   if (process.stdin.isTTY && process.stdin.setRawMode) {
     try {
       process.stdin.setRawMode(false);
-    } catch (e) {
+    } catch {
     }
   }
   console.log("\nGracefully shutting down...");
@@ -15345,7 +14871,7 @@ function ensureUserSettingsDirectory() {
   try {
     const manager = getSettingsManager();
     manager.loadUserSettings();
-  } catch (error) {
+  } catch {
   }
 }
 function loadApiKey() {
@@ -15380,7 +14906,7 @@ function loadModel() {
     try {
       const manager = getSettingsManager();
       model = manager.getCurrentModel();
-    } catch (error) {
+    } catch {
     }
   }
   return model;

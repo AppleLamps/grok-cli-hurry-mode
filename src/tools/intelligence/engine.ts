@@ -16,18 +16,9 @@ try {
   JavaScript = require("tree-sitter-javascript");
   TypeScript = require("tree-sitter-typescript");
   Python = require("tree-sitter-python");
-} catch (error) {
+} catch {
   console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
 }
-
-const pathExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await ops.promises.access(filePath, ops.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 // ==================== Core Data Structures ====================
 
@@ -385,7 +376,7 @@ export class CodeIntelligenceEngine {
     }
   }
 
-  private async parseWithTreeSitter(content: string, language: string, filePath: string): Promise<any> {
+  private async parseWithTreeSitter(content: string, language: string, _filePath: string): Promise<any> {
     const parser = this.parsers.get(language);
     if (!parser) {
       throw new Error(`No parser available for language: ${language}`);
@@ -407,9 +398,8 @@ export class CodeIntelligenceEngine {
 
   // ==================== Symbol Extraction (TypeScript) ====================
 
-  private extractTypeScriptSymbols(ast: any, content: string): SymbolInfo[] {
+  private extractTypeScriptSymbols(ast: any, _content: string): SymbolInfo[] {
     const symbols: SymbolInfo[] = [];
-    const lines = content.split('\n');
 
     const visit = (node: any, scope = 'global') => {
       if (!node) return;
@@ -670,7 +660,7 @@ export class CodeIntelligenceEngine {
 
   // ==================== Symbol Extraction (Tree-sitter) ====================
 
-  private extractTreeSitterSymbols(node: any, content: string, language: string): SymbolInfo[] {
+  private extractTreeSitterSymbols(node: any, _content: string, _language: string): SymbolInfo[] {
     const symbols: SymbolInfo[] = [];
 
     const visit = (node: any, scope = 'global') => {
@@ -733,7 +723,7 @@ export class CodeIntelligenceEngine {
     return symbols;
   }
 
-  private extractTreeSitterImports(node: any, content: string, language: string): ImportInfo[] {
+  private extractTreeSitterImports(node: any, content: string, _language: string): ImportInfo[] {
     const imports: ImportInfo[] = [];
 
     const visit = (node: any) => {
@@ -763,7 +753,7 @@ export class CodeIntelligenceEngine {
     return imports;
   }
 
-  private extractTreeSitterExports(node: any, content: string, language: string): ExportInfo[] {
+  private extractTreeSitterExports(node: any, _content: string, _language: string): ExportInfo[] {
     const exports: ExportInfo[] = [];
 
     const visit = (node: any) => {
@@ -926,7 +916,7 @@ export class CodeIntelligenceEngine {
               });
             }
           }
-        } catch (error) {
+        } catch {
           // Skip if file can't be read
         }
       }
@@ -964,8 +954,8 @@ export class CodeIntelligenceEngine {
         const absPath = path.resolve(this.rootPath, relPath);
         this.handleFileDelete(absPath);
       })
-      .on('error', (error: Error) => {
-        console.error('File watcher error:', error);
+      .on('error', (err: unknown) => {
+        console.error('File watcher error:', err);
       });
   }
 
@@ -984,7 +974,7 @@ export class CodeIntelligenceEngine {
     this.pendingUpdates.set(filePath, timeout);
   }
 
-  private async handleFileUpdate(filePath: string, event: 'add' | 'change'): Promise<void> {
+  private async handleFileUpdate(filePath: string, _event: 'add' | 'change'): Promise<void> {
     if (this.isIndexing) {
       // Skip updates during initial indexing
       return;
@@ -993,7 +983,6 @@ export class CodeIntelligenceEngine {
     try {
       // Get affected symbols before reindexing
       const oldSymbols = this.getFileSymbols(filePath);
-      const oldDependents = this.reverseDependencies.get(filePath) || new Set();
 
       // Reindex the file
       await this.indexFile(filePath);

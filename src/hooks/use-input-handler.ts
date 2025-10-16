@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useInput } from "ink";
 import path from "path";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { GrokToolCall } from "../grok/client.js";
+import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import { useEnhancedInput, Key } from "./use-enhanced-input.js";
 

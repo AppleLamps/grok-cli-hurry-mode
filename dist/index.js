@@ -7450,10 +7450,12 @@ var RefactoringAssistantTool = class {
     const extractedCode = lines.slice(startLine, endLine + 1);
     const extractedText = extractedCode.join("\n");
     const analysis = await this.analyzeExtractedCode(extractedText, filePath);
+    const finalParameters = parameters.length > 0 ? parameters : analysis.parameters;
+    const finalReturnType = returnType || analysis.inferredReturnType;
     const functionSignature = this.generateFunctionSignature(
       functionName,
-      analysis.parameters.length > 0 ? analysis.parameters : parameters,
-      returnType || analysis.inferredReturnType
+      finalParameters,
+      finalReturnType
     );
     const newFunction = this.createExtractedFunction(
       functionSignature,
@@ -7462,7 +7464,7 @@ var RefactoringAssistantTool = class {
     );
     const functionCall = this.generateFunctionCall(
       functionName,
-      analysis.parameters,
+      finalParameters,
       analysis.returnVariable
     );
     const changes = [
@@ -7487,13 +7489,24 @@ var RefactoringAssistantTool = class {
         type: "insert"
       }
     ];
+    let riskLevel = "medium";
+    const potentialIssues = [
+      "Variable scope changes",
+      "Side effects may be altered",
+      "Error handling context may change"
+    ];
+    if (analysis.confidence > 0.8 && analysis.externalReferences.size === 0) {
+      riskLevel = "low";
+    } else if (analysis.confidence < 0.5 || analysis.externalReferences.size > 3) {
+      riskLevel = "high";
+      potentialIssues.push("Low confidence in parameter detection");
+    }
+    if (analysis.externalReferences.size > 0) {
+      potentialIssues.push(`References ${analysis.externalReferences.size} external symbols`);
+    }
     const safety = {
-      riskLevel: "medium",
-      potentialIssues: [
-        "Variable scope changes",
-        "Side effects may be altered",
-        "Error handling context may change"
-      ],
+      riskLevel,
+      potentialIssues,
       affectedFiles: 1,
       affectedSymbols: 1,
       requiresTests: true,
@@ -7503,10 +7516,25 @@ var RefactoringAssistantTool = class {
       filePath,
       changes
     }];
-    const preview = this.generatePreview(fileChanges, "extract_function", extractedText, functionName);
+    let preview = this.generatePreview(fileChanges, "extract_function", extractedText, functionName);
+    preview += `
+
+--- Analysis Details ---`;
+    preview += `
+Confidence: ${(analysis.confidence * 100).toFixed(0)}%`;
+    preview += `
+Auto-detected parameters: ${finalParameters.map((p) => `${p.name}: ${p.type || "any"}`).join(", ") || "none"}`;
+    preview += `
+Inferred return type: ${finalReturnType}`;
+    if (analysis.externalReferences.size > 0) {
+      preview += `
+External references: ${Array.from(analysis.externalReferences).join(", ")}`;
+      preview += `
+\u26A0\uFE0F  Warning: Function references external symbols that may need to be passed as parameters`;
+    }
     return {
       type: "extract_function",
-      description: `Extract function '${functionName}' from lines ${startLine}-${endLine}`,
+      description: `Extract function '${functionName}' from lines ${startLine}-${endLine} (confidence: ${(analysis.confidence * 100).toFixed(0)}%)`,
       files: fileChanges,
       preview,
       safety
@@ -7716,27 +7744,255 @@ var RefactoringAssistantTool = class {
     }
     return changes;
   }
-  async analyzeExtractedCode(code, _filePath) {
-    const lines = code.split("\n");
+  async analyzeExtractedCode(code, filePath) {
     const parameters = [];
     const localVariables = [];
+    const externalReferences = /* @__PURE__ */ new Set();
     let inferredReturnType = "void";
     let returnVariable;
-    for (const line of lines) {
-      if (line.includes("return ")) {
-        const returnMatch = line.match(/return\s+([^;]+)/);
-        if (returnMatch) {
-          returnVariable = returnMatch[1].trim();
-          inferredReturnType = "any";
+    let confidence = 0.5;
+    try {
+      const { parse } = await import('@typescript-eslint/typescript-estree');
+      const wrappedCode = `function __temp__() {
+${code}
+}`;
+      const ast = parse(wrappedCode, {
+        jsx: filePath.endsWith(".tsx") || filePath.endsWith(".jsx"),
+        loc: true,
+        range: true,
+        errorOnUnknownASTType: false,
+        errorOnTypeScriptSyntacticAndSemanticIssues: false
+      });
+      const fileSymbols = this.intelligenceEngine.getFileSymbols(filePath);
+      const fileSymbolNames = new Set(fileSymbols.map((s) => s.name));
+      const declaredVariables = /* @__PURE__ */ new Set();
+      const usedVariables = /* @__PURE__ */ new Set();
+      const returnStatements = [];
+      const visit = (node) => {
+        if (!node) return;
+        switch (node.type) {
+          case "VariableDeclaration":
+            node.declarations?.forEach((decl) => {
+              const varName = decl.id?.name;
+              if (varName) {
+                declaredVariables.add(varName);
+                localVariables.push(varName);
+              }
+            });
+            break;
+          case "Identifier":
+            const idName = node.name;
+            if (idName && !declaredVariables.has(idName)) {
+              usedVariables.add(idName);
+            }
+            break;
+          case "ReturnStatement":
+            returnStatements.push(node);
+            if (node.argument) {
+              if (node.argument.type === "Identifier") {
+                returnVariable = node.argument.name;
+              } else if (node.argument.type === "ObjectExpression") {
+                inferredReturnType = "object";
+              } else if (node.argument.type === "ArrayExpression") {
+                inferredReturnType = "any[]";
+              } else if (node.argument.type === "Literal") {
+                inferredReturnType = typeof node.argument.value;
+              }
+            }
+            break;
+          case "FunctionDeclaration":
+          case "ArrowFunctionExpression":
+          case "FunctionExpression":
+            return;
+        }
+        for (const key in node) {
+          if (key !== "parent" && key !== "loc" && key !== "range") {
+            const child = node[key];
+            if (Array.isArray(child)) {
+              child.forEach((grandchild) => {
+                if (grandchild && typeof grandchild === "object") {
+                  visit(grandchild);
+                }
+              });
+            } else if (child && typeof child === "object") {
+              visit(child);
+            }
+          }
+        }
+      };
+      visit(ast);
+      for (const varName of usedVariables) {
+        if (!declaredVariables.has(varName)) {
+          const isFileSymbol = fileSymbolNames.has(varName);
+          const isGlobal = this.isGlobalIdentifier(varName);
+          if (!isGlobal) {
+            if (isFileSymbol) {
+              externalReferences.add(varName);
+            } else {
+              parameters.push({
+                name: varName,
+                type: this.inferParameterType(varName, code)
+              });
+            }
+          }
         }
       }
+      if (returnStatements.length > 0) {
+        if (returnVariable && declaredVariables.has(returnVariable)) {
+          inferredReturnType = this.inferVariableType(returnVariable, code);
+        } else if (returnVariable && !declaredVariables.has(returnVariable)) {
+          inferredReturnType = "any";
+        }
+      } else {
+        inferredReturnType = "void";
+      }
+      confidence = this.calculateAnalysisConfidence({
+        hasReturnStatements: returnStatements.length > 0,
+        parametersDetected: parameters.length,
+        localVariablesDetected: localVariables.length,
+        externalReferencesDetected: externalReferences.size,
+        returnTypeInferred: inferredReturnType !== "any"
+      });
+    } catch (error) {
+      console.warn("AST analysis failed, using fallback:", error);
+      const lines = code.split("\n");
+      for (const line of lines) {
+        if (line.includes("return ")) {
+          const returnMatch = line.match(/return\s+([^;]+)/);
+          if (returnMatch) {
+            returnVariable = returnMatch[1].trim();
+            inferredReturnType = "any";
+          }
+        }
+      }
+      confidence = 0.3;
     }
     return {
       parameters,
       localVariables,
       inferredReturnType,
-      returnVariable
+      returnVariable,
+      externalReferences,
+      confidence
     };
+  }
+  isGlobalIdentifier(name) {
+    const globals = /* @__PURE__ */ new Set([
+      "console",
+      "window",
+      "document",
+      "process",
+      "global",
+      "require",
+      "module",
+      "exports",
+      "setTimeout",
+      "setInterval",
+      "clearTimeout",
+      "clearInterval",
+      "Promise",
+      "Array",
+      "Object",
+      "String",
+      "Number",
+      "Boolean",
+      "Date",
+      "Math",
+      "JSON",
+      "RegExp",
+      "Error",
+      "TypeError",
+      "ReferenceError",
+      "SyntaxError",
+      "Map",
+      "Set",
+      "WeakMap",
+      "WeakSet",
+      "Symbol",
+      "Proxy",
+      "Reflect",
+      "Buffer",
+      "undefined",
+      "null",
+      "true",
+      "false",
+      "NaN",
+      "Infinity",
+      "isNaN",
+      "isFinite",
+      "parseInt",
+      "parseFloat",
+      "encodeURI",
+      "decodeURI",
+      "encodeURIComponent",
+      "decodeURIComponent"
+    ]);
+    return globals.has(name);
+  }
+  inferParameterType(paramName, code) {
+    const lines = code.split("\n");
+    for (const line of lines) {
+      if (line.includes(`${paramName}.`)) {
+        if (line.includes(".map(") || line.includes(".filter(") || line.includes(".forEach(")) {
+          return "any[]";
+        }
+        if (line.includes(".toString(") || line.includes(".toLowerCase(") || line.includes(".toUpperCase(")) {
+          return "string";
+        }
+        if (line.includes(".toFixed(") || line.includes(".toPrecision(")) {
+          return "number";
+        }
+      }
+      if (new RegExp(`${paramName}\\s*[+\\-*/]\\s*\\d`).test(line)) {
+        return "number";
+      }
+      if (new RegExp(`${paramName}\\s*\\+\\s*['"\`]`).test(line) || new RegExp(`['"\`]\\s*\\+\\s*${paramName}`).test(line)) {
+        return "string";
+      }
+      if (new RegExp(`${paramName}\\s*(&&|\\|\\||!)\\s*`).test(line)) {
+        return "boolean";
+      }
+    }
+    return "any";
+  }
+  inferVariableType(varName, code) {
+    const lines = code.split("\n");
+    for (const line of lines) {
+      const declMatch = line.match(new RegExp(`(?:const|let|var)\\s+${varName}\\s*=\\s*(.+)`));
+      if (declMatch) {
+        const value = declMatch[1].trim();
+        if (value.startsWith('"') || value.startsWith("'") || value.startsWith("`")) {
+          return "string";
+        }
+        if (/^\d+$/.test(value) || /^\d+\.\d+$/.test(value)) {
+          return "number";
+        }
+        if (value === "true" || value === "false") {
+          return "boolean";
+        }
+        if (value.startsWith("[")) {
+          return "any[]";
+        }
+        if (value.startsWith("{")) {
+          return "object";
+        }
+      }
+      const typeMatch = line.match(new RegExp(`(?:const|let|var)\\s+${varName}\\s*:\\s*([^=]+)`));
+      if (typeMatch) {
+        return typeMatch[1].trim();
+      }
+    }
+    return "any";
+  }
+  calculateAnalysisConfidence(metrics) {
+    let confidence = 0.5;
+    if (metrics.hasReturnStatements) confidence += 0.1;
+    if (metrics.parametersDetected > 0) confidence += 0.1;
+    if (metrics.localVariablesDetected > 0) confidence += 0.1;
+    if (metrics.returnTypeInferred) confidence += 0.15;
+    if (metrics.externalReferencesDetected > 3) confidence -= 0.1;
+    if (metrics.parametersDetected > 5) confidence -= 0.05;
+    return Math.max(0.1, Math.min(1, confidence));
   }
   generateFunctionSignature(name, parameters, returnType) {
     const params = parameters.map(

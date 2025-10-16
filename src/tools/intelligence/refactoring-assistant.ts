@@ -254,14 +254,18 @@ export class RefactoringAssistantTool {
     const extractedCode = lines.slice(startLine, endLine + 1);
     const extractedText = extractedCode.join('\n');
 
-    // Analyze the extracted code for variables
+    // Analyze the extracted code for variables using enhanced AST analysis
     const analysis = await this.analyzeExtractedCode(extractedText, filePath);
+
+    // Use auto-detected parameters if none were provided
+    const finalParameters = parameters.length > 0 ? parameters : analysis.parameters;
+    const finalReturnType = returnType || analysis.inferredReturnType;
 
     // Generate function signature
     const functionSignature = this.generateFunctionSignature(
       functionName,
-      analysis.parameters.length > 0 ? analysis.parameters : parameters,
-      returnType || analysis.inferredReturnType
+      finalParameters,
+      finalReturnType
     );
 
     // Create the new function
@@ -274,7 +278,7 @@ export class RefactoringAssistantTool {
     // Generate function call
     const functionCall = this.generateFunctionCall(
       functionName,
-      analysis.parameters,
+      finalParameters,
       analysis.returnVariable
     );
 
@@ -302,13 +306,28 @@ export class RefactoringAssistantTool {
       }
     ];
 
+    // Determine risk level based on analysis confidence and external references
+    let riskLevel: 'low' | 'medium' | 'high' = 'medium';
+    const potentialIssues: string[] = [
+      'Variable scope changes',
+      'Side effects may be altered',
+      'Error handling context may change'
+    ];
+
+    if (analysis.confidence > 0.8 && analysis.externalReferences.size === 0) {
+      riskLevel = 'low';
+    } else if (analysis.confidence < 0.5 || analysis.externalReferences.size > 3) {
+      riskLevel = 'high';
+      potentialIssues.push('Low confidence in parameter detection');
+    }
+
+    if (analysis.externalReferences.size > 0) {
+      potentialIssues.push(`References ${analysis.externalReferences.size} external symbols`);
+    }
+
     const safety: SafetyAnalysis = {
-      riskLevel: 'medium',
-      potentialIssues: [
-        'Variable scope changes',
-        'Side effects may be altered',
-        'Error handling context may change'
-      ],
+      riskLevel,
+      potentialIssues,
       affectedFiles: 1,
       affectedSymbols: 1,
       requiresTests: true,
@@ -320,11 +339,22 @@ export class RefactoringAssistantTool {
       changes
     }];
 
-    const preview = this.generatePreview(fileChanges, 'extract_function', extractedText, functionName);
+    // Enhanced preview with analysis details
+    let preview = this.generatePreview(fileChanges, 'extract_function', extractedText, functionName);
+
+    // Add analysis metadata to preview
+    preview += `\n\n--- Analysis Details ---`;
+    preview += `\nConfidence: ${(analysis.confidence * 100).toFixed(0)}%`;
+    preview += `\nAuto-detected parameters: ${finalParameters.map(p => `${p.name}: ${p.type || 'any'}`).join(', ') || 'none'}`;
+    preview += `\nInferred return type: ${finalReturnType}`;
+    if (analysis.externalReferences.size > 0) {
+      preview += `\nExternal references: ${Array.from(analysis.externalReferences).join(', ')}`;
+      preview += `\n⚠️  Warning: Function references external symbols that may need to be passed as parameters`;
+    }
 
     return {
       type: 'extract_function',
-      description: `Extract function '${functionName}' from lines ${startLine}-${endLine}`,
+      description: `Extract function '${functionName}' from lines ${startLine}-${endLine} (confidence: ${(analysis.confidence * 100).toFixed(0)}%)`,
       files: fileChanges,
       preview,
       safety
@@ -599,31 +629,292 @@ export class RefactoringAssistantTool {
     return changes;
   }
 
-  private async analyzeExtractedCode(code: string, _filePath: string): Promise<any> {
-    // Analyze variables, return statements, etc.
-    const lines = code.split('\n');
+  private async analyzeExtractedCode(code: string, filePath: string): Promise<{
+    parameters: ExtractedParameter[];
+    localVariables: string[];
+    inferredReturnType: string;
+    returnVariable: string | undefined;
+    externalReferences: Set<string>;
+    confidence: number;
+  }> {
     const parameters: ExtractedParameter[] = [];
     const localVariables: string[] = [];
+    const externalReferences = new Set<string>();
     let inferredReturnType = 'void';
     let returnVariable: string | undefined;
+    let confidence = 0.5; // Default confidence
 
-    // Simple analysis - could be enhanced with AST parsing
-    for (const line of lines) {
-      if (line.includes('return ')) {
-        const returnMatch = line.match(/return\s+([^;]+)/);
-        if (returnMatch) {
-          returnVariable = returnMatch[1].trim();
-          inferredReturnType = 'any'; // Could infer better
+    try {
+      // Parse the extracted code as TypeScript
+      const { parse } = await import("@typescript-eslint/typescript-estree");
+
+      // Wrap code in a function to make it parseable
+      const wrappedCode = `function __temp__() {\n${code}\n}`;
+
+      const ast = parse(wrappedCode, {
+        jsx: filePath.endsWith('.tsx') || filePath.endsWith('.jsx'),
+        loc: true,
+        range: true,
+        errorOnUnknownASTType: false,
+        errorOnTypeScriptSyntacticAndSemanticIssues: false
+      });
+
+      // Get all symbols from the parent file for context
+      const fileSymbols = this.intelligenceEngine.getFileSymbols(filePath);
+      const fileSymbolNames = new Set(fileSymbols.map(s => s.name));
+
+      // Track variables declared within the extracted code
+      const declaredVariables = new Set<string>();
+      const usedVariables = new Set<string>();
+      const returnStatements: any[] = [];
+
+      // Traverse AST to find variable declarations and usages
+      const visit = (node: any) => {
+        if (!node) return;
+
+        switch (node.type) {
+          case 'VariableDeclaration':
+            node.declarations?.forEach((decl: any) => {
+              const varName = decl.id?.name;
+              if (varName) {
+                declaredVariables.add(varName);
+                localVariables.push(varName);
+              }
+            });
+            break;
+
+          case 'Identifier':
+            // Track identifier usage
+            const idName = node.name;
+            if (idName && !declaredVariables.has(idName)) {
+              usedVariables.add(idName);
+            }
+            break;
+
+          case 'ReturnStatement':
+            returnStatements.push(node);
+            if (node.argument) {
+              // Analyze return value
+              if (node.argument.type === 'Identifier') {
+                returnVariable = node.argument.name;
+              } else if (node.argument.type === 'ObjectExpression') {
+                inferredReturnType = 'object';
+              } else if (node.argument.type === 'ArrayExpression') {
+                inferredReturnType = 'any[]';
+              } else if (node.argument.type === 'Literal') {
+                inferredReturnType = typeof node.argument.value;
+              }
+            }
+            break;
+
+          case 'FunctionDeclaration':
+          case 'ArrowFunctionExpression':
+          case 'FunctionExpression':
+            // Don't traverse into nested functions for variable analysis
+            return;
+        }
+
+        // Recursively visit children
+        for (const key in node) {
+          if (key !== 'parent' && key !== 'loc' && key !== 'range') {
+            const child = node[key];
+            if (Array.isArray(child)) {
+              child.forEach(grandchild => {
+                if (grandchild && typeof grandchild === 'object') {
+                  visit(grandchild);
+                }
+              });
+            } else if (child && typeof child === 'object') {
+              visit(child);
+            }
+          }
+        }
+      };
+
+      visit(ast);
+
+      // Determine parameters: variables used but not declared locally
+      for (const varName of usedVariables) {
+        if (!declaredVariables.has(varName)) {
+          // Check if it's a symbol from the parent file
+          const isFileSymbol = fileSymbolNames.has(varName);
+          const isGlobal = this.isGlobalIdentifier(varName);
+
+          if (!isGlobal) {
+            if (isFileSymbol) {
+              // It's a reference to a file-level symbol
+              externalReferences.add(varName);
+            } else {
+              // It's likely a parameter
+              parameters.push({
+                name: varName,
+                type: this.inferParameterType(varName, code)
+              });
+            }
+          }
         }
       }
+
+      // Infer return type from return statements
+      if (returnStatements.length > 0) {
+        if (returnVariable && declaredVariables.has(returnVariable)) {
+          // Variable is declared locally and returned
+          inferredReturnType = this.inferVariableType(returnVariable, code);
+        } else if (returnVariable && !declaredVariables.has(returnVariable)) {
+          // Variable is a parameter or external reference
+          inferredReturnType = 'any';
+        }
+      } else {
+        inferredReturnType = 'void';
+      }
+
+      // Calculate confidence based on analysis quality
+      confidence = this.calculateAnalysisConfidence({
+        hasReturnStatements: returnStatements.length > 0,
+        parametersDetected: parameters.length,
+        localVariablesDetected: localVariables.length,
+        externalReferencesDetected: externalReferences.size,
+        returnTypeInferred: inferredReturnType !== 'any'
+      });
+
+    } catch (error) {
+      // Fallback to simple regex-based analysis
+      console.warn('AST analysis failed, using fallback:', error);
+
+      const lines = code.split('\n');
+      for (const line of lines) {
+        if (line.includes('return ')) {
+          const returnMatch = line.match(/return\s+([^;]+)/);
+          if (returnMatch) {
+            returnVariable = returnMatch[1].trim();
+            inferredReturnType = 'any';
+          }
+        }
+      }
+
+      confidence = 0.3; // Low confidence for fallback
     }
 
     return {
       parameters,
       localVariables,
       inferredReturnType,
-      returnVariable
+      returnVariable,
+      externalReferences,
+      confidence
     };
+  }
+
+  private isGlobalIdentifier(name: string): boolean {
+    // Common global identifiers that shouldn't be parameters
+    const globals = new Set([
+      'console', 'window', 'document', 'process', 'global', 'require', 'module', 'exports',
+      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Promise', 'Array',
+      'Object', 'String', 'Number', 'Boolean', 'Date', 'Math', 'JSON', 'RegExp',
+      'Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'Map', 'Set', 'WeakMap',
+      'WeakSet', 'Symbol', 'Proxy', 'Reflect', 'Buffer', 'undefined', 'null', 'true',
+      'false', 'NaN', 'Infinity', 'isNaN', 'isFinite', 'parseInt', 'parseFloat',
+      'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent'
+    ]);
+
+    return globals.has(name);
+  }
+
+  private inferParameterType(paramName: string, code: string): string {
+    // Try to infer type from usage patterns
+    const lines = code.split('\n');
+
+    for (const line of lines) {
+      // Check for method calls
+      if (line.includes(`${paramName}.`)) {
+        if (line.includes('.map(') || line.includes('.filter(') || line.includes('.forEach(')) {
+          return 'any[]';
+        }
+        if (line.includes('.toString(') || line.includes('.toLowerCase(') || line.includes('.toUpperCase(')) {
+          return 'string';
+        }
+        if (line.includes('.toFixed(') || line.includes('.toPrecision(')) {
+          return 'number';
+        }
+      }
+
+      // Check for arithmetic operations
+      if (new RegExp(`${paramName}\\s*[+\\-*/]\\s*\\d`).test(line)) {
+        return 'number';
+      }
+
+      // Check for string operations
+      if (new RegExp(`${paramName}\\s*\\+\\s*['"\`]`).test(line) || new RegExp(`['"\`]\\s*\\+\\s*${paramName}`).test(line)) {
+        return 'string';
+      }
+
+      // Check for boolean operations
+      if (new RegExp(`${paramName}\\s*(&&|\\|\\||!)\\s*`).test(line)) {
+        return 'boolean';
+      }
+    }
+
+    return 'any'; // Default to any if we can't infer
+  }
+
+  private inferVariableType(varName: string, code: string): string {
+    // Try to infer type from variable declaration
+    const lines = code.split('\n');
+
+    for (const line of lines) {
+      // Look for variable declaration
+      const declMatch = line.match(new RegExp(`(?:const|let|var)\\s+${varName}\\s*=\\s*(.+)`));
+      if (declMatch) {
+        const value = declMatch[1].trim();
+
+        // Check literal types
+        if (value.startsWith('"') || value.startsWith("'") || value.startsWith('`')) {
+          return 'string';
+        }
+        if (/^\d+$/.test(value) || /^\d+\.\d+$/.test(value)) {
+          return 'number';
+        }
+        if (value === 'true' || value === 'false') {
+          return 'boolean';
+        }
+        if (value.startsWith('[')) {
+          return 'any[]';
+        }
+        if (value.startsWith('{')) {
+          return 'object';
+        }
+      }
+
+      // Look for type annotation
+      const typeMatch = line.match(new RegExp(`(?:const|let|var)\\s+${varName}\\s*:\\s*([^=]+)`));
+      if (typeMatch) {
+        return typeMatch[1].trim();
+      }
+    }
+
+    return 'any';
+  }
+
+  private calculateAnalysisConfidence(metrics: {
+    hasReturnStatements: boolean;
+    parametersDetected: number;
+    localVariablesDetected: number;
+    externalReferencesDetected: number;
+    returnTypeInferred: boolean;
+  }): number {
+    let confidence = 0.5; // Base confidence
+
+    // Increase confidence for successful analysis
+    if (metrics.hasReturnStatements) confidence += 0.1;
+    if (metrics.parametersDetected > 0) confidence += 0.1;
+    if (metrics.localVariablesDetected > 0) confidence += 0.1;
+    if (metrics.returnTypeInferred) confidence += 0.15;
+
+    // Decrease confidence for complex scenarios
+    if (metrics.externalReferencesDetected > 3) confidence -= 0.1;
+    if (metrics.parametersDetected > 5) confidence -= 0.05;
+
+    return Math.max(0.1, Math.min(1.0, confidence));
   }
 
   private generateFunctionSignature(

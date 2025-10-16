@@ -1,5 +1,6 @@
 import { ToolResult } from "../../types/index.js";
 import { ASTParserTool, ImportInfo, ExportInfo } from "./ast-parser.js";
+import { CodeIntelligenceEngine } from "./engine.js";
 import * as ops from "fs";
 
 const pathExists = async (filePath: string): Promise<boolean> => {
@@ -66,9 +67,11 @@ export class DependencyAnalyzerTool {
   name = "dependency_analyzer";
   description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
 
+  private intelligenceEngine: CodeIntelligenceEngine;
   private astParser: ASTParserTool;
 
-  constructor() {
+  constructor(intelligenceEngine: CodeIntelligenceEngine) {
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
   }
 
@@ -174,7 +177,7 @@ export class DependencyAnalyzerTool {
     sourceFiles: string[],
     rootPath: string,
     includeExternals: boolean,
-    maxDepth: number
+    _maxDepth: number
   ): Promise<DependencyGraph> {
     const graph: DependencyGraph = {
       nodes: new Map(),

@@ -1,7 +1,8 @@
 import { ToolResult } from "../../types/index.js";
 import { ASTParserTool, SymbolInfo } from "./ast-parser.js";
-import { SymbolSearchTool, SymbolReference } from "./symbol-search.js";
+import { SymbolSearchTool } from "./symbol-search.js";
 import { DependencyAnalyzerTool } from "./dependency-analyzer.js";
+import { CodeIntelligenceEngine } from "./engine.js";
 import * as ops from "fs";
 
 const pathExists = async (filePath: string): Promise<boolean> => {
@@ -138,14 +139,16 @@ export class CodeContextTool {
   name = "code_context";
   description = "Build intelligent code context, analyze relationships, and provide semantic understanding";
 
+  private intelligenceEngine: CodeIntelligenceEngine;
   private astParser: ASTParserTool;
   private symbolSearch: SymbolSearchTool;
   private dependencyAnalyzer: DependencyAnalyzerTool;
 
-  constructor() {
+  constructor(intelligenceEngine: CodeIntelligenceEngine) {
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
-    this.symbolSearch = new SymbolSearchTool();
-    this.dependencyAnalyzer = new DependencyAnalyzerTool();
+    this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(intelligenceEngine);
   }
 
   async execute(args: any): Promise<ToolResult> {
@@ -199,7 +202,7 @@ export class CodeContextTool {
     includeMetrics: boolean,
     includeSemantics: boolean,
     maxRelatedFiles: number,
-    contextDepth: number
+    _contextDepth: number
   ): Promise<CodeContext> {
     // Parse the file
     const parseResult = await this.astParser.execute({
@@ -312,7 +315,7 @@ export class CodeContextTool {
     symbol: SymbolInfo,
     allSymbols: SymbolInfo[],
     filePath: string,
-    rootPath: string
+    _rootPath: string
   ): Promise<string[]> {
     const related: string[] = [];
 
@@ -330,7 +333,7 @@ export class CodeContextTool {
         .slice(0, 5)
         .map(ref => ref.symbol.name);
       related.push(...similarNames);
-    } catch (error) {
+    } catch {
       // Skip if search fails
     }
 
@@ -378,7 +381,7 @@ export class CodeContextTool {
           contexts: ['return']
         });
       }
-    } catch (error) {
+    } catch {
       // Skip if file read fails
     }
 
@@ -468,8 +471,8 @@ export class CodeContextTool {
 
   private async analyzeDependencies(
     imports: any[],
-    filePath: string,
-    rootPath: string
+    _filePath: string,
+    _rootPath: string
   ): Promise<ContextualDependency[]> {
     const dependencies: ContextualDependency[] = [];
 
@@ -507,8 +510,8 @@ export class CodeContextTool {
     filePath: string,
     symbols: ContextualSymbol[],
     dependencies: ContextualDependency[],
-    rootPath: string,
-    maxRelatedFiles: number
+    _rootPath: string,
+    _maxRelatedFiles: number
   ): Promise<CodeRelationship[]> {
     const relationships: CodeRelationship[] = [];
 
@@ -578,7 +581,7 @@ export class CodeContextTool {
     };
   }
 
-  private inferPurpose(fileName: string, symbols: ContextualSymbol[], content: string): string {
+  private inferPurpose(fileName: string, symbols: ContextualSymbol[], _content: string): string {
     const name = fileName.toLowerCase();
     
     if (name.includes('test') || name.includes('spec')) return 'testing';
@@ -602,7 +605,7 @@ export class CodeContextTool {
     return 'unknown';
   }
 
-  private extractDomain(filePath: string, symbols: ContextualSymbol[], dependencies: ContextualDependency[]): string[] {
+  private extractDomain(filePath: string, _symbols: ContextualSymbol[], dependencies: ContextualDependency[]): string[] {
     const domains: string[] = [];
     const pathParts = filePath.split(path.sep);
 
@@ -729,7 +732,7 @@ export class CodeContextTool {
     };
   }
 
-  private async calculateCodeMetrics(filePath: string, symbols: ContextualSymbol[]): Promise<CodeMetrics> {
+  private async calculateCodeMetrics(filePath: string, _symbols: ContextualSymbol[]): Promise<CodeMetrics> {
     const content = await ops.promises.readFile(filePath, 'utf-8');
     const lines = content.split('\n');
     const codeLines = lines.filter(line => line.trim().length > 0 && !line.trim().startsWith('//'));

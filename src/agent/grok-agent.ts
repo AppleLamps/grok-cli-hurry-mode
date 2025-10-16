@@ -25,6 +25,7 @@ import {
   CodeContextTool,
   RefactoringAssistantTool,
 } from "../tools/index.js";
+import { CodeIntelligenceEngine } from "../tools/intelligence/engine.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
@@ -65,6 +66,7 @@ export class GrokAgent extends EventEmitter {
   private codeAwareEditor: CodeAwareEditorTool;
   private operationHistory: OperationHistoryTool;
   // Intelligence tools
+  private intelligenceEngine: CodeIntelligenceEngine;
   private astParser: ASTParserTool;
   private symbolSearch: SymbolSearchTool;
   private dependencyAnalyzer: DependencyAnalyzerTool;
@@ -107,12 +109,14 @@ export class GrokAgent extends EventEmitter {
     this.fileTreeOps = new FileTreeOperationsTool();
     this.codeAwareEditor = new CodeAwareEditorTool();
     this.operationHistory = new OperationHistoryTool();
+    // Initialize intelligence engine
+    this.intelligenceEngine = new CodeIntelligenceEngine(process.cwd());
     // Initialize intelligence tools
     this.astParser = new ASTParserTool();
-    this.symbolSearch = new SymbolSearchTool();
-    this.dependencyAnalyzer = new DependencyAnalyzerTool();
-    this.codeContext = new CodeContextTool();
-    this.refactoringAssistant = new RefactoringAssistantTool();
+    this.symbolSearch = new SymbolSearchTool(this.intelligenceEngine);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
+    this.codeContext = new CodeContextTool(this.intelligenceEngine);
+    this.refactoringAssistant = new RefactoringAssistantTool(this.intelligenceEngine);
     this.tokenCounter = createTokenCounter(modelToUse);
 
     // Initialize MCP servers if configured

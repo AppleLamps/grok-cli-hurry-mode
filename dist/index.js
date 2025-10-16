@@ -19,6 +19,8 @@ import { writeFile } from 'fs/promises';
 import * as ops6 from 'fs-extra';
 import Fuse from 'fuse.js';
 import { glob } from 'glob';
+import { parse } from '@typescript-eslint/typescript-estree';
+import chokidar from 'chokidar';
 import { encoding_for_model, get_encoding } from 'tiktoken';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
 import crypto from 'crypto';
@@ -6037,12 +6039,13 @@ var ASTParserTool = class {
 };
 var SymbolSearchTool = class {
   // 5 minutes
-  constructor() {
+  constructor(intelligenceEngine) {
     this.name = "symbol_search";
     this.description = "Search for symbols (functions, classes, variables) across the codebase with fuzzy matching and cross-references";
     this.symbolIndex = /* @__PURE__ */ new Map();
     this.lastIndexTime = 0;
     this.indexCacheDuration = 5 * 60 * 1e3;
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
   }
   async execute(args) {
@@ -6369,9 +6372,10 @@ var pathExists9 = async (filePath) => {
   }
 };
 var DependencyAnalyzerTool = class {
-  constructor() {
+  constructor(intelligenceEngine) {
     this.name = "dependency_analyzer";
     this.description = "Analyze import/export dependencies, detect circular dependencies, and generate dependency graphs";
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
   }
   async execute(args) {
@@ -6564,10 +6568,10 @@ var DependencyAnalyzerTool = class {
     const circularDeps = [];
     const visited = /* @__PURE__ */ new Set();
     const visiting = /* @__PURE__ */ new Set();
-    const dfs = (filePath, path25) => {
+    const dfs = (filePath, path26) => {
       if (visiting.has(filePath)) {
-        const cycleStart = path25.indexOf(filePath);
-        const cycle = path25.slice(cycleStart).concat([filePath]);
+        const cycleStart = path26.indexOf(filePath);
+        const cycle = path26.slice(cycleStart).concat([filePath]);
         circularDeps.push({
           cycle: cycle.map((fp) => graph.nodes.get(fp)?.filePath || fp),
           severity: cycle.length <= 2 ? "error" : "warning",
@@ -6583,7 +6587,7 @@ var DependencyAnalyzerTool = class {
       if (node) {
         for (const dependency of node.dependencies) {
           if (graph.nodes.has(dependency)) {
-            dfs(dependency, [...path25, filePath]);
+            dfs(dependency, [...path26, filePath]);
           }
         }
       }
@@ -6839,12 +6843,13 @@ var pathExists10 = async (filePath) => {
   }
 };
 var CodeContextTool = class {
-  constructor() {
+  constructor(intelligenceEngine) {
     this.name = "code_context";
     this.description = "Build intelligent code context, analyze relationships, and provide semantic understanding";
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
-    this.symbolSearch = new SymbolSearchTool();
-    this.dependencyAnalyzer = new DependencyAnalyzerTool();
+    this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(intelligenceEngine);
   }
   async execute(args) {
     try {
@@ -7366,11 +7371,12 @@ var pathExists11 = async (filePath) => {
   }
 };
 var RefactoringAssistantTool = class {
-  constructor() {
+  constructor(intelligenceEngine) {
     this.name = "refactoring_assistant";
     this.description = "Perform safe code refactoring operations including rename, extract, inline, and move operations";
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
-    this.symbolSearch = new SymbolSearchTool();
+    this.symbolSearch = new SymbolSearchTool(intelligenceEngine);
     this.multiFileEditor = new MultiFileEditorTool();
     this.operationHistory = new OperationHistoryTool();
   }
@@ -7963,6 +7969,1019 @@ ${body}
     };
   }
 };
+var Parser;
+var JavaScript;
+var TypeScript;
+var Python;
+try {
+  Parser = __require("tree-sitter");
+  JavaScript = __require("tree-sitter-javascript");
+  TypeScript = __require("tree-sitter-typescript");
+  Python = __require("tree-sitter-python");
+} catch {
+  console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
+}
+var CodeIntelligenceEngine = class {
+  constructor(rootPath, options) {
+    // Core data structures
+    this.fileAsts = /* @__PURE__ */ new Map();
+    // filePath -> AST
+    this.fileMetadata = /* @__PURE__ */ new Map();
+    // filePath -> metadata
+    this.symbolIndex = /* @__PURE__ */ new Map();
+    // symbolName -> references
+    this.dependencyGraph = /* @__PURE__ */ new Map();
+    // filePath -> dependencies
+    this.reverseDependencies = /* @__PURE__ */ new Map();
+    // filePath -> dependents
+    this.crossReferences = /* @__PURE__ */ new Map();
+    // symbolName -> cross-refs
+    this.parseErrors = /* @__PURE__ */ new Map();
+    // filePath -> errors
+    // Parser instances
+    this.parsers = /* @__PURE__ */ new Map();
+    // File watcher
+    this.watcher = null;
+    this.isInitialized = false;
+    this.isIndexing = false;
+    this.filePatterns = ["**/*.{ts,tsx,js,jsx,py}"];
+    this.excludePatterns = ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/.grok/**"];
+    // Performance tracking
+    this.statistics = {
+      totalFiles: 0,
+      indexedFiles: 0,
+      totalSymbols: 0,
+      totalDependencies: 0,
+      memoryUsage: 0,
+      lastUpdateTime: 0,
+      averageParseTime: 0
+    };
+    // Debouncing for file changes
+    this.pendingUpdates = /* @__PURE__ */ new Map();
+    this.updateDebounceMs = 300;
+    this.rootPath = path7__default.resolve(rootPath);
+    if (options?.filePatterns) {
+      this.filePatterns = options.filePatterns;
+    }
+    if (options?.excludePatterns) {
+      this.excludePatterns = options.excludePatterns;
+    }
+    if (options?.updateDebounceMs !== void 0) {
+      this.updateDebounceMs = options.updateDebounceMs;
+    }
+    this.initializeParsers();
+  }
+  // ==================== Initialization ====================
+  initializeParsers() {
+    if (!Parser || !JavaScript || !TypeScript || !Python) {
+      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
+      return;
+    }
+    try {
+      const jsParser = new Parser();
+      jsParser.setLanguage(JavaScript);
+      this.parsers.set("javascript", jsParser);
+      this.parsers.set("js", jsParser);
+      this.parsers.set("jsx", jsParser);
+      const tsParser = new Parser();
+      tsParser.setLanguage(TypeScript.typescript);
+      this.parsers.set("typescript", tsParser);
+      this.parsers.set("ts", tsParser);
+      const tsxParser = new Parser();
+      tsxParser.setLanguage(TypeScript.tsx);
+      this.parsers.set("tsx", tsxParser);
+      const pyParser = new Parser();
+      pyParser.setLanguage(Python);
+      this.parsers.set("python", pyParser);
+      this.parsers.set("py", pyParser);
+    } catch (error) {
+      console.warn("Failed to initialize some parsers:", error);
+    }
+  }
+  async initialize() {
+    if (this.isInitialized) {
+      console.warn("CodeIntelligenceEngine already initialized");
+      return;
+    }
+    console.log(`\u{1F9E0} Initializing Code Intelligence Engine for: ${this.rootPath}`);
+    const startTime = Date.now();
+    try {
+      const sourceFiles = await this.scanSourceFiles();
+      console.log(`   Found ${sourceFiles.length} source files`);
+      this.isIndexing = true;
+      await this.indexFiles(sourceFiles);
+      this.isIndexing = false;
+      this.buildCrossReferences();
+      this.startFileWatcher();
+      this.updateStatistics();
+      this.isInitialized = true;
+      const duration = Date.now() - startTime;
+      console.log(`\u2705 Engine initialized in ${duration}ms`);
+      console.log(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
+    } catch (error) {
+      console.error("Failed to initialize Code Intelligence Engine:", error);
+      throw error;
+    }
+  }
+  async scanSourceFiles() {
+    const allFiles = [];
+    for (const pattern of this.filePatterns) {
+      const files = await glob(pattern, {
+        cwd: this.rootPath,
+        absolute: true,
+        ignore: this.excludePatterns,
+        nodir: true
+      });
+      allFiles.push(...files);
+    }
+    return [...new Set(allFiles)];
+  }
+  async indexFiles(files) {
+    const total = files.length;
+    let indexed = 0;
+    const batchSize = 10;
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
+      await Promise.all(batch.map((file) => this.indexFile(file)));
+      indexed += batch.length;
+      if (indexed % 50 === 0 || indexed === total) {
+        console.log(`   Indexing progress: ${indexed}/${total}`);
+      }
+    }
+  }
+  async indexFile(filePath) {
+    try {
+      const parseStart = Date.now();
+      const stats = await fs.promises.stat(filePath);
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      const hash = this.computeHash(content);
+      const language = this.detectLanguage(filePath);
+      const existing = this.fileMetadata.get(filePath);
+      if (existing && existing.hash === hash) {
+        return;
+      }
+      const parseResult = await this.parseFile(filePath, content, language);
+      const parseTime = Date.now() - parseStart;
+      if (parseResult.tree) {
+        this.fileAsts.set(filePath, parseResult.tree);
+      }
+      this.fileMetadata.set(filePath, {
+        filePath: path7__default.relative(this.rootPath, filePath),
+        absolutePath: filePath,
+        language,
+        lastModified: stats.mtimeMs,
+        hash,
+        parseTime,
+        indexed: true
+      });
+      this.indexSymbols(filePath, parseResult.symbols);
+      this.indexDependencies(filePath, parseResult.imports);
+      if (parseResult.errors.length > 0) {
+        this.parseErrors.set(filePath, parseResult.errors);
+      } else {
+        this.parseErrors.delete(filePath);
+      }
+    } catch (error) {
+      console.warn(`Failed to index ${filePath}:`, error);
+      this.parseErrors.set(filePath, [{
+        message: error instanceof Error ? error.message : String(error),
+        line: 0,
+        column: 0,
+        severity: "error"
+      }]);
+    }
+  }
+  async parseFile(filePath, content, language) {
+    const errors = [];
+    try {
+      if (language === "typescript" || language === "tsx" || language === "javascript" || language === "jsx") {
+        return await this.parseWithTypeScript(content, language);
+      }
+      return await this.parseWithTreeSitter(content, language, filePath);
+    } catch (error) {
+      errors.push({
+        message: error instanceof Error ? error.message : String(error),
+        line: 0,
+        column: 0,
+        severity: "error"
+      });
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors
+      };
+    }
+  }
+  async parseWithTypeScript(content, language) {
+    try {
+      const ast = parse(content, {
+        jsx: language === "tsx" || language === "jsx",
+        loc: true,
+        range: true,
+        comment: true,
+        attachComments: true,
+        errorOnUnknownASTType: false,
+        errorOnTypeScriptSyntacticAndSemanticIssues: false
+      });
+      const symbols = this.extractTypeScriptSymbols(ast, content);
+      const imports = this.extractTypeScriptImports(ast);
+      const exports = this.extractTypeScriptExports(ast);
+      return {
+        tree: ast,
+        symbols,
+        imports,
+        exports,
+        errors: []
+      };
+    } catch (error) {
+      return {
+        tree: null,
+        symbols: [],
+        imports: [],
+        exports: [],
+        errors: [{
+          message: error instanceof Error ? error.message : String(error),
+          line: 0,
+          column: 0,
+          severity: "error"
+        }]
+      };
+    }
+  }
+  async parseWithTreeSitter(content, language, _filePath) {
+    const parser = this.parsers.get(language);
+    if (!parser) {
+      throw new Error(`No parser available for language: ${language}`);
+    }
+    const tree = parser.parse(content);
+    const symbols = this.extractTreeSitterSymbols(tree.rootNode, content, language);
+    const imports = this.extractTreeSitterImports(tree.rootNode, content, language);
+    const exports = this.extractTreeSitterExports(tree.rootNode, content, language);
+    return {
+      tree: tree.rootNode,
+      symbols,
+      imports,
+      exports,
+      errors: []
+    };
+  }
+  // ==================== Symbol Extraction (TypeScript) ====================
+  extractTypeScriptSymbols(ast, _content) {
+    const symbols = [];
+    const visit = (node, scope = "global") => {
+      if (!node) return;
+      const getPosition = (pos) => ({
+        row: pos.line - 1,
+        column: pos.column
+      });
+      switch (node.type) {
+        case "FunctionDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "function",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope,
+              isAsync: node.async,
+              parameters: node.params?.map((param) => ({
+                name: param.name || param.left?.name || "unknown",
+                type: param.typeAnnotation?.typeAnnotation?.type,
+                optional: param.optional
+              })) || []
+            });
+          }
+          break;
+        case "ClassDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "class",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          node.body?.body?.forEach((member) => {
+            if (member.type === "MethodDefinition" && member.key?.name) {
+              symbols.push({
+                name: member.key.name,
+                type: "method",
+                startPosition: getPosition(member.loc.start),
+                endPosition: getPosition(member.loc.end),
+                scope: `${node.id?.name || "unknown"}.${member.key.name}`,
+                accessibility: member.accessibility,
+                isStatic: member.static,
+                isAsync: member.value?.async
+              });
+            }
+          });
+          break;
+        case "VariableDeclaration":
+          node.declarations?.forEach((decl) => {
+            if (decl.id?.name) {
+              symbols.push({
+                name: decl.id.name,
+                type: "variable",
+                startPosition: getPosition(decl.loc.start),
+                endPosition: getPosition(decl.loc.end),
+                scope
+              });
+            }
+          });
+          break;
+        case "TSInterfaceDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "interface",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+        case "TSEnumDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "enum",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+        case "TSTypeAliasDeclaration":
+          if (node.id?.name) {
+            symbols.push({
+              name: node.id.name,
+              type: "type",
+              startPosition: getPosition(node.loc.start),
+              endPosition: getPosition(node.loc.end),
+              scope
+            });
+          }
+          break;
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild, scope);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child, scope);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return symbols;
+  }
+  extractTypeScriptImports(ast) {
+    const imports = [];
+    const visit = (node) => {
+      if (node.type === "ImportDeclaration") {
+        const specifiers = [];
+        node.specifiers?.forEach((spec) => {
+          switch (spec.type) {
+            case "ImportDefaultSpecifier":
+              specifiers.push({
+                name: spec.local.name,
+                isDefault: true
+              });
+              break;
+            case "ImportNamespaceSpecifier":
+              specifiers.push({
+                name: spec.local.name,
+                isNamespace: true
+              });
+              break;
+            case "ImportSpecifier":
+              specifiers.push({
+                name: spec.imported.name,
+                alias: spec.local.name !== spec.imported.name ? spec.local.name : void 0
+              });
+              break;
+          }
+        });
+        imports.push({
+          source: node.source.value,
+          specifiers,
+          isTypeOnly: node.importKind === "type",
+          startPosition: {
+            row: node.loc.start.line - 1,
+            column: node.loc.start.column
+          }
+        });
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return imports;
+  }
+  extractTypeScriptExports(ast) {
+    const exports = [];
+    const visit = (node) => {
+      switch (node.type) {
+        case "ExportNamedDeclaration":
+          if (node.declaration) {
+            if (node.declaration.id?.name) {
+              exports.push({
+                name: node.declaration.id.name,
+                type: this.getDeclarationType(node.declaration.type),
+                startPosition: {
+                  row: node.loc.start.line - 1,
+                  column: node.loc.start.column
+                }
+              });
+            }
+          } else if (node.specifiers) {
+            node.specifiers.forEach((spec) => {
+              exports.push({
+                name: spec.exported.name,
+                type: "variable",
+                startPosition: {
+                  row: node.loc.start.line - 1,
+                  column: node.loc.start.column
+                },
+                source: node.source?.value
+              });
+            });
+          }
+          break;
+        case "ExportDefaultDeclaration":
+          const name = node.declaration?.id?.name || "default";
+          exports.push({
+            name,
+            type: this.getDeclarationType(node.declaration?.type) || "default",
+            startPosition: {
+              row: node.loc.start.line - 1,
+              column: node.loc.start.column
+            },
+            isDefault: true
+          });
+          break;
+      }
+      for (const key in node) {
+        if (key !== "parent" && key !== "loc" && key !== "range") {
+          const child = node[key];
+          if (Array.isArray(child)) {
+            child.forEach((grandchild) => {
+              if (grandchild && typeof grandchild === "object") {
+                visit(grandchild);
+              }
+            });
+          } else if (child && typeof child === "object") {
+            visit(child);
+          }
+        }
+      }
+    };
+    visit(ast);
+    return exports;
+  }
+  // ==================== Symbol Extraction (Tree-sitter) ====================
+  extractTreeSitterSymbols(node, _content, _language) {
+    const symbols = [];
+    const visit = (node2, scope = "global") => {
+      const startPos = { row: node2.startPosition.row, column: node2.startPosition.column };
+      const endPos = { row: node2.endPosition.row, column: node2.endPosition.column };
+      switch (node2.type) {
+        case "function_declaration":
+        case "function_definition":
+          const funcName = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
+          if (funcName) {
+            symbols.push({
+              name: funcName,
+              type: "function",
+              startPosition: startPos,
+              endPosition: endPos,
+              scope
+            });
+          }
+          break;
+        case "class_declaration":
+        case "class_definition":
+          const className = this.extractNodeName(node2, "name") || this.extractNodeName(node2, "identifier");
+          if (className) {
+            symbols.push({
+              name: className,
+              type: "class",
+              startPosition: startPos,
+              endPosition: endPos,
+              scope
+            });
+          }
+          break;
+        case "variable_declaration":
+        case "lexical_declaration":
+          node2.children?.forEach((child) => {
+            if (child.type === "variable_declarator") {
+              const varName = this.extractNodeName(child, "name") || this.extractNodeName(child, "identifier");
+              if (varName) {
+                symbols.push({
+                  name: varName,
+                  type: "variable",
+                  startPosition: { row: child.startPosition.row, column: child.startPosition.column },
+                  endPosition: { row: child.endPosition.row, column: child.endPosition.column },
+                  scope
+                });
+              }
+            }
+          });
+          break;
+      }
+      node2.children?.forEach((child) => visit(child, scope));
+    };
+    visit(node);
+    return symbols;
+  }
+  extractTreeSitterImports(node, content, _language) {
+    const imports = [];
+    const visit = (node2) => {
+      if (node2.type === "import_statement" || node2.type === "import_from_statement") {
+        const sourceNode = node2.children?.find(
+          (child) => child.type === "string" || child.type === "string_literal"
+        );
+        if (sourceNode) {
+          const source = content.slice(sourceNode.startIndex + 1, sourceNode.endIndex - 1);
+          imports.push({
+            source,
+            specifiers: [],
+            startPosition: {
+              row: node2.startPosition.row,
+              column: node2.startPosition.column
+            }
+          });
+        }
+      }
+      node2.children?.forEach((child) => visit(child));
+    };
+    visit(node);
+    return imports;
+  }
+  extractTreeSitterExports(node, _content, _language) {
+    const exports = [];
+    const visit = (node2) => {
+      if (node2.type === "export_statement") {
+        const name = this.extractNodeName(node2, "name") || "unknown";
+        exports.push({
+          name,
+          type: "variable",
+          startPosition: {
+            row: node2.startPosition.row,
+            column: node2.startPosition.column
+          }
+        });
+      }
+      node2.children?.forEach((child) => visit(child));
+    };
+    visit(node);
+    return exports;
+  }
+  // ==================== Symbol Indexing ====================
+  indexSymbols(filePath, symbols) {
+    for (const symbol of symbols) {
+      const existing = this.symbolIndex.get(symbol.name) || [];
+      const filtered = existing.filter((ref) => ref.filePath !== filePath);
+      const symbolRef = {
+        symbol,
+        filePath,
+        usages: []
+        // Will be populated by buildCrossReferences
+      };
+      filtered.push(symbolRef);
+      this.symbolIndex.set(symbol.name, filtered);
+    }
+  }
+  indexDependencies(filePath, imports) {
+    const dependencies = /* @__PURE__ */ new Set();
+    for (const importInfo of imports) {
+      if (importInfo.source.startsWith(".")) {
+        const resolvedPath = this.resolveImportPath(importInfo.source, filePath);
+        if (resolvedPath) {
+          dependencies.add(resolvedPath);
+        }
+      }
+    }
+    this.dependencyGraph.set(filePath, dependencies);
+    for (const dependency of dependencies) {
+      const dependents = this.reverseDependencies.get(dependency) || /* @__PURE__ */ new Set();
+      dependents.add(filePath);
+      this.reverseDependencies.set(dependency, dependents);
+    }
+  }
+  resolveImportPath(importPath, currentFile) {
+    const currentDir = path7__default.dirname(currentFile);
+    const basePath = path7__default.resolve(currentDir, importPath);
+    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
+    for (const ext of extensions) {
+      const fullPath = basePath + ext;
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+    for (const ext of extensions) {
+      const indexPath = path7__default.join(basePath, `index${ext}`);
+      if (fs.existsSync(indexPath)) {
+        return indexPath;
+      }
+    }
+    return null;
+  }
+  // ==================== Cross-Reference Building ====================
+  buildCrossReferences() {
+    this.crossReferences.clear();
+    for (const [symbolName, symbolRefs] of this.symbolIndex) {
+      const definition = symbolRefs.find(
+        (ref) => ref.symbol.startPosition.row >= 0
+      );
+      if (!definition) continue;
+      const crossRef = {
+        symbolName,
+        definitionFile: definition.filePath,
+        definitionLocation: {
+          line: definition.symbol.startPosition.row,
+          column: definition.symbol.startPosition.column
+        },
+        references: []
+      };
+      for (const ref of symbolRefs) {
+        if (ref.filePath === definition.filePath) {
+          crossRef.references.push({
+            file: ref.filePath,
+            line: ref.symbol.startPosition.row,
+            column: ref.symbol.startPosition.column,
+            type: "definition"
+          });
+        }
+        try {
+          const content = fs.readFileSync(ref.filePath, "utf-8");
+          const lines = content.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const regex = new RegExp(`\\b${symbolName}\\b`, "g");
+            let match;
+            while ((match = regex.exec(line)) !== null) {
+              if (ref.filePath === definition.filePath && i === definition.symbol.startPosition.row) {
+                continue;
+              }
+              let usageType = "reference";
+              if (line.includes("import") && line.includes(symbolName)) {
+                usageType = "import";
+              } else if (line.includes("export") && line.includes(symbolName)) {
+                usageType = "export";
+              } else if (line.includes(symbolName + "(")) {
+                usageType = "call";
+              }
+              crossRef.references.push({
+                file: ref.filePath,
+                line: i,
+                column: match.index,
+                type: usageType
+              });
+            }
+          }
+        } catch {
+        }
+      }
+      this.crossReferences.set(symbolName, crossRef);
+    }
+  }
+  // ==================== File Watching ====================
+  startFileWatcher() {
+    console.log("   Starting file watcher...");
+    this.watcher = chokidar.watch(this.filePatterns, {
+      cwd: this.rootPath,
+      ignored: this.excludePatterns,
+      persistent: true,
+      ignoreInitial: true,
+      // Don't fire events for existing files
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 100
+      }
+    });
+    this.watcher.on("add", (relPath) => {
+      const absPath = path7__default.resolve(this.rootPath, relPath);
+      this.scheduleFileUpdate(absPath, "add");
+    }).on("change", (relPath) => {
+      const absPath = path7__default.resolve(this.rootPath, relPath);
+      this.scheduleFileUpdate(absPath, "change");
+    }).on("unlink", (relPath) => {
+      const absPath = path7__default.resolve(this.rootPath, relPath);
+      this.handleFileDelete(absPath);
+    }).on("error", (err) => {
+      console.error("File watcher error:", err);
+    });
+  }
+  scheduleFileUpdate(filePath, event) {
+    const existing = this.pendingUpdates.get(filePath);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timeout = setTimeout(async () => {
+      this.pendingUpdates.delete(filePath);
+      await this.handleFileUpdate(filePath, event);
+    }, this.updateDebounceMs);
+    this.pendingUpdates.set(filePath, timeout);
+  }
+  async handleFileUpdate(filePath, _event) {
+    if (this.isIndexing) {
+      return;
+    }
+    try {
+      const oldSymbols = this.getFileSymbols(filePath);
+      await this.indexFile(filePath);
+      const newSymbols = this.getFileSymbols(filePath);
+      const affectedSymbols = /* @__PURE__ */ new Set([
+        ...oldSymbols.map((s) => s.name),
+        ...newSymbols.map((s) => s.name)
+      ]);
+      for (const symbolName of affectedSymbols) {
+        const refs = this.symbolIndex.get(symbolName);
+        if (refs) {
+          this.rebuildSymbolCrossReference(symbolName, refs);
+        }
+      }
+      this.updateStatistics();
+      console.log(`   Updated: ${path7__default.relative(this.rootPath, filePath)}`);
+    } catch (error) {
+      console.error(`Failed to update ${filePath}:`, error);
+    }
+  }
+  handleFileDelete(filePath) {
+    this.fileAsts.delete(filePath);
+    this.fileMetadata.delete(filePath);
+    this.parseErrors.delete(filePath);
+    const symbols = this.getFileSymbols(filePath);
+    for (const symbol of symbols) {
+      const refs = this.symbolIndex.get(symbol.name);
+      if (refs) {
+        const filtered = refs.filter((ref) => ref.filePath !== filePath);
+        if (filtered.length > 0) {
+          this.symbolIndex.set(symbol.name, filtered);
+        } else {
+          this.symbolIndex.delete(symbol.name);
+        }
+      }
+      this.crossReferences.delete(symbol.name);
+    }
+    this.dependencyGraph.delete(filePath);
+    this.reverseDependencies.delete(filePath);
+    for (const [file, dependents] of this.reverseDependencies) {
+      if (dependents.has(filePath)) {
+        dependents.delete(filePath);
+        if (dependents.size === 0) {
+          this.reverseDependencies.delete(file);
+        }
+      }
+    }
+    this.updateStatistics();
+    console.log(`   Deleted: ${path7__default.relative(this.rootPath, filePath)}`);
+  }
+  rebuildSymbolCrossReference(symbolName, refs) {
+    const definition = refs.find(
+      (ref) => ref.symbol.startPosition.row >= 0
+    );
+    if (!definition) return;
+    const crossRef = {
+      symbolName,
+      definitionFile: definition.filePath,
+      definitionLocation: {
+        line: definition.symbol.startPosition.row,
+        column: definition.symbol.startPosition.column
+      },
+      references: []
+    };
+    this.crossReferences.set(symbolName, crossRef);
+  }
+  // ==================== Public Query API ====================
+  getAST(filePath) {
+    return this.fileAsts.get(filePath);
+  }
+  findSymbol(symbolName) {
+    return this.symbolIndex.get(symbolName) || [];
+  }
+  findSymbolByPattern(pattern, caseSensitive = false) {
+    const results = [];
+    const regex = new RegExp(pattern, caseSensitive ? "" : "i");
+    for (const [symbolName, refs] of this.symbolIndex) {
+      if (regex.test(symbolName)) {
+        results.push(...refs);
+      }
+    }
+    return results;
+  }
+  findReferences(symbolName) {
+    return this.crossReferences.get(symbolName);
+  }
+  getDependencies(filePath) {
+    return this.dependencyGraph.get(filePath) || /* @__PURE__ */ new Set();
+  }
+  getDependents(filePath) {
+    return this.reverseDependencies.get(filePath) || /* @__PURE__ */ new Set();
+  }
+  getFileSymbols(filePath) {
+    const symbols = [];
+    for (const refs of this.symbolIndex.values()) {
+      for (const ref of refs) {
+        if (ref.filePath === filePath) {
+          symbols.push(ref.symbol);
+        }
+      }
+    }
+    return symbols;
+  }
+  getFileMetadata(filePath) {
+    return this.fileMetadata.get(filePath);
+  }
+  getAllFiles() {
+    return Array.from(this.fileMetadata.keys());
+  }
+  getAllSymbols() {
+    return new Map(this.symbolIndex);
+  }
+  analyzeImpact(filePath, symbolName) {
+    const affectedFiles = /* @__PURE__ */ new Set();
+    const affectedSymbols = /* @__PURE__ */ new Set();
+    const circularDependencies = [];
+    const warnings = [];
+    if (symbolName) {
+      const crossRef = this.crossReferences.get(symbolName);
+      if (crossRef) {
+        for (const ref of crossRef.references) {
+          affectedFiles.add(ref.file);
+        }
+        affectedSymbols.add(symbolName);
+      }
+    } else {
+      affectedFiles.add(filePath);
+      const dependents = this.getDependents(filePath);
+      for (const dependent of dependents) {
+        affectedFiles.add(dependent);
+      }
+      const fileSymbols = this.getFileSymbols(filePath);
+      for (const symbol of fileSymbols) {
+        affectedSymbols.add(symbol.name);
+      }
+    }
+    const visited = /* @__PURE__ */ new Set();
+    const path26 = [];
+    const dfs = (file) => {
+      if (path26.includes(file)) {
+        const cycleStart = path26.indexOf(file);
+        circularDependencies.push(path26.slice(cycleStart).concat([file]));
+        return;
+      }
+      if (visited.has(file)) return;
+      visited.add(file);
+      path26.push(file);
+      const deps = this.getDependencies(file);
+      for (const dep of deps) {
+        if (affectedFiles.has(dep)) {
+          dfs(dep);
+        }
+      }
+      path26.pop();
+    };
+    dfs(filePath);
+    if (affectedFiles.size > 10) {
+      warnings.push("Large number of affected files");
+    }
+    if (circularDependencies.length > 0) {
+      warnings.push("Circular dependencies detected");
+    }
+    if (affectedSymbols.size > 20) {
+      warnings.push("Large number of affected symbols");
+    }
+    let riskLevel = "low";
+    if (affectedFiles.size > 10 || circularDependencies.length > 0) {
+      riskLevel = "high";
+    } else if (affectedFiles.size > 5 || affectedSymbols.size > 10) {
+      riskLevel = "medium";
+    }
+    return {
+      affectedFiles,
+      affectedSymbols,
+      circularDependencies,
+      riskLevel,
+      warnings
+    };
+  }
+  getStatistics() {
+    return { ...this.statistics };
+  }
+  isReady() {
+    return this.isInitialized && !this.isIndexing;
+  }
+  // ==================== Utility Methods ====================
+  detectLanguage(filePath) {
+    const ext = path7__default.extname(filePath).slice(1).toLowerCase();
+    switch (ext) {
+      case "js":
+      case "mjs":
+      case "cjs":
+        return "javascript";
+      case "jsx":
+        return "jsx";
+      case "ts":
+        return "typescript";
+      case "tsx":
+        return "tsx";
+      case "py":
+      case "pyw":
+        return "python";
+      default:
+        return "javascript";
+    }
+  }
+  computeHash(content) {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+  extractNodeName(node, nameField) {
+    const nameNode = node.children?.find((child) => child.type === nameField);
+    return nameNode ? nameNode.text : null;
+  }
+  getDeclarationType(nodeType) {
+    switch (nodeType) {
+      case "FunctionDeclaration":
+        return "function";
+      case "ClassDeclaration":
+        return "class";
+      case "TSInterfaceDeclaration":
+        return "interface";
+      case "TSEnumDeclaration":
+        return "enum";
+      case "TSTypeAliasDeclaration":
+        return "type";
+      default:
+        return "variable";
+    }
+  }
+  updateStatistics() {
+    const totalSymbols = Array.from(this.symbolIndex.values()).reduce((sum, refs) => sum + refs.length, 0);
+    const totalDeps = Array.from(this.dependencyGraph.values()).reduce((sum, deps) => sum + deps.size, 0);
+    const parseTimes = Array.from(this.fileMetadata.values()).map((meta) => meta.parseTime).filter((time) => time > 0);
+    const avgParseTime = parseTimes.length > 0 ? parseTimes.reduce((sum, time) => sum + time, 0) / parseTimes.length : 0;
+    this.statistics = {
+      totalFiles: this.fileMetadata.size,
+      indexedFiles: Array.from(this.fileMetadata.values()).filter((m) => m.indexed).length,
+      totalSymbols,
+      totalDependencies: totalDeps,
+      memoryUsage: process.memoryUsage().heapUsed,
+      lastUpdateTime: Date.now(),
+      averageParseTime: Math.round(avgParseTime)
+    };
+  }
+  // ==================== Cleanup ====================
+  dispose() {
+    console.log("\u{1F9E0} Disposing Code Intelligence Engine");
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+    for (const timeout of this.pendingUpdates.values()) {
+      clearTimeout(timeout);
+    }
+    this.pendingUpdates.clear();
+    this.fileAsts.clear();
+    this.fileMetadata.clear();
+    this.symbolIndex.clear();
+    this.dependencyGraph.clear();
+    this.reverseDependencies.clear();
+    this.crossReferences.clear();
+    this.parseErrors.clear();
+    this.isInitialized = false;
+    console.log("   Engine disposed");
+  }
+};
 var TokenCounter = class {
   constructor(model = "gpt-4") {
     try {
@@ -8070,11 +9089,12 @@ var GrokAgent = class extends EventEmitter {
     this.fileTreeOps = new FileTreeOperationsTool();
     this.codeAwareEditor = new CodeAwareEditorTool();
     this.operationHistory = new OperationHistoryTool();
+    this.intelligenceEngine = new CodeIntelligenceEngine(process.cwd());
     this.astParser = new ASTParserTool();
-    this.symbolSearch = new SymbolSearchTool();
-    this.dependencyAnalyzer = new DependencyAnalyzerTool();
-    this.codeContext = new CodeContextTool();
-    this.refactoringAssistant = new RefactoringAssistantTool();
+    this.symbolSearch = new SymbolSearchTool(this.intelligenceEngine);
+    this.dependencyAnalyzer = new DependencyAnalyzerTool(this.intelligenceEngine);
+    this.codeContext = new CodeContextTool(this.intelligenceEngine);
+    this.refactoringAssistant = new RefactoringAssistantTool(this.intelligenceEngine);
     this.tokenCounter = createTokenCounter(modelToUse);
     this.initializeMCP();
     const customInstructions = loadCustomInstructions();
@@ -8545,10 +9565,10 @@ Current working directory: ${process.cwd()}`
             return await this.textEditor.view(args.path, range);
           } catch (error) {
             console.warn(`view_file tool failed, falling back to bash: ${error.message}`);
-            const path25 = args.path;
-            let command = `cat "${path25}"`;
+            const path26 = args.path;
+            let command = `cat "${path26}"`;
             if (args.start_line && args.end_line) {
-              command = `sed -n '${args.start_line},${args.end_line}p' "${path25}"`;
+              command = `sed -n '${args.start_line},${args.end_line}p' "${path26}"`;
             }
             return await this.bash.execute(command);
           }

@@ -1,20 +1,8 @@
 import { ToolResult } from "../../types/index.js";
-import { ASTParserTool, SymbolInfo, ImportInfo, ExportInfo } from "./ast-parser.js";
+import { ASTParserTool, SymbolInfo } from "./ast-parser.js";
+import { CodeIntelligenceEngine } from "./engine.js";
 import Fuse from "fuse.js";
 import * as ops from "fs";
-
-const pathExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await ops.promises.access(filePath, ops.constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-
-
-import path from "path";
 import { glob } from "glob";
 
 export interface SymbolReference {
@@ -53,12 +41,14 @@ export class SymbolSearchTool {
   name = "symbol_search";
   description = "Search for symbols (functions, classes, variables) across the codebase with fuzzy matching and cross-references";
 
+  private intelligenceEngine: CodeIntelligenceEngine;
   private astParser: ASTParserTool;
   private symbolIndex: Map<string, SymbolReference[]> = new Map();
   private lastIndexTime: number = 0;
   private indexCacheDuration = 5 * 60 * 1000; // 5 minutes
 
-  constructor() {
+  constructor(intelligenceEngine: CodeIntelligenceEngine) {
+    this.intelligenceEngine = intelligenceEngine;
     this.astParser = new ASTParserTool();
   }
 
@@ -294,7 +284,7 @@ export class SymbolSearchTool {
           index += symbolName.length;
         }
       }
-    } catch (error) {
+    } catch {
       // Skip if file can't be read
     }
 

@@ -10,6 +10,14 @@ interface ChatHistoryProps {
   isConfirmationActive?: boolean;
 }
 
+// Configuration for showing detailed code/diffs in CLI
+// Set to false for cleaner output with just status messages
+// Can be overridden with environment variables:
+//   SHOW_FILE_CONTENT=1 - Show file contents when reading/creating files
+//   SHOW_DIFFS=1 - Show detailed diffs when editing files
+const SHOW_FILE_CONTENT = process.env.SHOW_FILE_CONTENT === '1' || false;
+const SHOW_DIFFS = process.env.SHOW_DIFFS === '1' || false;
+
 // Helper to truncate content for better readability
 const truncateContent = (content: string, maxLines: number = 15): string => {
   const lines = content.split('\n');
@@ -187,6 +195,7 @@ const MemoizedChatEntry = React.memo(
           return truncated;
         };
         const shouldShowDiff =
+          SHOW_DIFFS &&
           entry.toolCall?.function?.name === "str_replace_editor" &&
           entry.toolResult?.success &&
           entry.content.includes("Updated") &&
@@ -194,6 +203,7 @@ const MemoizedChatEntry = React.memo(
           entry.content.includes("+++");
 
         const shouldShowFileContent =
+          SHOW_FILE_CONTENT &&
           (entry.toolCall?.function?.name === "view_file" ||
             entry.toolCall?.function?.name === "create_file") &&
           entry.toolResult?.success &&
@@ -205,6 +215,12 @@ const MemoizedChatEntry = React.memo(
             entry.toolCall?.function?.name === "view_todo_list") &&
           entry.toolResult?.success &&
           entry.toolResult?.data;
+
+        // Extract just the summary message (first line) for cleaner display
+        const getSummaryMessage = (content: string): string => {
+          const firstLine = content.split("\n")[0];
+          return firstLine || content;
+        };
 
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
@@ -233,10 +249,11 @@ const MemoizedChatEntry = React.memo(
                   </Box>
                 </Box>
               ) : shouldShowDiff ? (
-                // For diff results, show only the summary line, not the raw content
-                <Text color="gray">⎿ {entry.content.split("\n")[0]}</Text>
+                // For diff results, show only the summary line
+                <Text color="gray">⎿ {getSummaryMessage(entry.content)}</Text>
               ) : (
-                <Text color="gray">⎿ {formatToolContent(entry.content, toolName)}</Text>
+                // Show only summary message for all other tools
+                <Text color="gray">⎿ {getSummaryMessage(formatToolContent(entry.content, toolName))}</Text>
               )}
             </Box>
             {shouldShowDiff && !isExecuting && (

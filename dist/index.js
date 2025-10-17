@@ -25,8 +25,6 @@ import pLimit from 'p-limit';
 import Fuse from 'fuse.js';
 import { encoding_for_model, get_encoding } from 'tiktoken';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
-import { marked } from 'marked';
-import TerminalRenderer from 'marked-terminal';
 import chalk from 'chalk';
 
 var __defProp = Object.defineProperty;
@@ -775,7 +773,7 @@ var HttpTransport = class extends EventEmitter {
     try {
       await this.client.get("/health");
       this.connected = true;
-    } catch (error) {
+    } catch {
       this.connected = true;
     }
     return new HttpClientTransport(this.client);
@@ -1626,7 +1624,7 @@ var ConfirmationService = class _ConfirmationService extends EventEmitter {
     if (options.showVSCodeOpen) {
       try {
         await this.openInVSCode(options.filename);
-      } catch (error) {
+      } catch {
         options.showVSCodeOpen = false;
       }
     }
@@ -1667,7 +1665,7 @@ var ConfirmationService = class _ConfirmationService extends EventEmitter {
         await execAsync(`which ${cmd}`);
         await execAsync(`${cmd} "${filename}"`);
         return;
-      } catch (error) {
+      } catch {
         continue;
       }
     }
@@ -2005,7 +2003,7 @@ Total: ${entries.length} items`;
               await walkDir(fullPath, depth + 1);
             }
           }
-        } catch (error) {
+        } catch {
         }
       };
       await walkDir(targetDir);
@@ -2054,7 +2052,7 @@ ${matches.join("\n")}`
               });
             }
           });
-        } catch (error) {
+        } catch {
         }
       };
       const walkDir = async (dir, depth = 0) => {
@@ -2076,7 +2074,7 @@ ${matches.join("\n")}`
               await walkDir(fullPath, depth + 1);
             }
           }
-        } catch (error) {
+        } catch {
         }
       };
       const stats = await fs.promises.stat(targetPath);
@@ -3076,49 +3074,6 @@ var TodoTool = class {
   constructor() {
     this.todos = [];
   }
-  formatTodoList() {
-    if (this.todos.length === 0) {
-      return "No todos created yet";
-    }
-    const getCheckbox = (status) => {
-      switch (status) {
-        case "completed":
-          return "\u25CF";
-        case "in_progress":
-          return "\u25D0";
-        case "pending":
-          return "\u25CB";
-        default:
-          return "\u25CB";
-      }
-    };
-    const getStatusColor = (status) => {
-      switch (status) {
-        case "completed":
-          return "\x1B[32m";
-        // Green
-        case "in_progress":
-          return "\x1B[36m";
-        // Cyan
-        case "pending":
-          return "\x1B[37m";
-        // White/default
-        default:
-          return "\x1B[0m";
-      }
-    };
-    const reset = "\x1B[0m";
-    let output = "";
-    this.todos.forEach((todo, index) => {
-      const checkbox = getCheckbox(todo.status);
-      const statusColor = getStatusColor(todo.status);
-      const strikethrough = todo.status === "completed" ? "\x1B[9m" : "";
-      const indent = index === 0 ? "" : "  ";
-      output += `${indent}${statusColor}${strikethrough}${checkbox} ${todo.content}${reset}
-`;
-    });
-    return output;
-  }
   async createTodoList(todos) {
     try {
       for (const todo of todos) {
@@ -3144,7 +3099,8 @@ var TodoTool = class {
       this.todos = todos;
       return {
         success: true,
-        output: this.formatTodoList()
+        output: `Created todo list with ${todos.length} item${todos.length === 1 ? "" : "s"}`,
+        data: this.todos
       };
     } catch (error) {
       return {
@@ -3184,7 +3140,8 @@ var TodoTool = class {
       }
       return {
         success: true,
-        output: this.formatTodoList()
+        output: `Updated ${updatedIds.length} todo item${updatedIds.length === 1 ? "" : "s"}`,
+        data: this.todos
       };
     } catch (error) {
       return {
@@ -3196,7 +3153,8 @@ var TodoTool = class {
   async viewTodoList() {
     return {
       success: true,
-      output: this.formatTodoList()
+      output: this.todos.length === 0 ? "No todos created yet" : `Viewing ${this.todos.length} todo item${this.todos.length === 1 ? "" : "s"}`,
+      data: this.todos
     };
   }
 };
@@ -6357,7 +6315,7 @@ This action cannot be undone.`
           }
         }
         snapshots.push(snapshot);
-      } catch (error) {
+      } catch {
         snapshots.push({
           filePath: path12.resolve(filePath),
           existed: false
@@ -6448,7 +6406,7 @@ This action cannot be undone.`
   /**
    * Perform redo operation
    */
-  async performRedo(entry) {
+  async performRedo(_entry) {
     return {
       success: false,
       error: "Redo functionality requires storing forward changes - not yet implemented"
@@ -6507,7 +6465,7 @@ ${errors.join("\n")}`;
   /**
    * Undo refactor operation
    */
-  async undoRefactorOperation(fileSnapshots, customData) {
+  async undoRefactorOperation(fileSnapshots, _customData) {
     return await this.undoFileOperations(fileSnapshots);
   }
   /**
@@ -6580,7 +6538,7 @@ ${errors.join("\n")}`;
   /**
    * Determine operation size
    */
-  determineOperationSize(files, rollbackData) {
+  determineOperationSize(files, _rollbackData) {
     if (files.length <= 3) return "small";
     if (files.length <= 10) return "medium";
     return "large";
@@ -6626,7 +6584,7 @@ ${errors.join("\n")}`;
         }));
         this.currentPosition = parsed.currentPosition || this.history.length - 1;
       }
-    } catch (error) {
+    } catch {
       this.history = [];
       this.currentPosition = -1;
     }
@@ -6643,7 +6601,7 @@ ${errors.join("\n")}`;
         lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
       };
       await ops9.promises.writeFile(this.historyFile, JSON.stringify(data, null, 2), "utf-8");
-    } catch (error) {
+    } catch {
     }
   }
   /**
@@ -6784,7 +6742,7 @@ var PlanExecutor = class extends EventEmitter {
           const content = await fs.promises.readFile(filePath, "utf-8");
           fileSnapshots.set(filePath, content);
         }
-      } catch (_error) {
+      } catch {
       }
     }
     this.rollbackPoints.set(step.id, {
@@ -8111,7 +8069,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
         const flags = options.caseSensitive ? "g" : "gi";
         pattern = new RegExp(`${wordBoundary}${escapedPattern}${wordBoundary}`, flags);
       }
-    } catch (error) {
+    } catch {
       throw new Error(`Invalid regex pattern: ${options.pattern}`);
     }
     for (let i = 0; i < lines.length; i++) {
@@ -8160,7 +8118,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
           const flags = options.caseSensitive ? "g" : "gi";
           pattern = new RegExp(`${wordBoundary}${escapedPattern}${wordBoundary}`, flags);
         }
-      } catch (error) {
+      } catch {
         return {
           filePath: path12.relative(process.cwd(), filePath),
           replacements: 0,
@@ -8660,7 +8618,7 @@ ${emptyDirs.map((dir) => `- ${path12.relative(rootPath, dir)}`).join("\n")}`;
           }
           return a.name.localeCompare(b.name);
         });
-      } catch (error) {
+      } catch {
       }
     }
     return node;
@@ -8935,7 +8893,7 @@ ${emptyDirs.map((dir) => `- ${path12.relative(rootPath, dir)}`).join("\n")}`;
           return true;
         }
         return false;
-      } catch (error) {
+      } catch {
         return false;
       }
     };
@@ -9569,7 +9527,7 @@ ${importsToAdd.join("\n")}`;
     let changes = 0;
     const newLines = lines.map((line) => {
       const regex = new RegExp(`\\b${oldName}\\b`, "g");
-      const newLine = line.replace(regex, (match) => {
+      const newLine = line.replace(regex, () => {
         changes++;
         return newName;
       });
@@ -9726,7 +9684,7 @@ ${extractedCode}`;
   /**
    * Format code for insertion with proper indentation
    */
-  formatCodeForInsertion(code, indentation, language) {
+  formatCodeForInsertion(code, indentation, _language) {
     const lines = code.split("\n");
     return lines.map((line) => {
       if (line.trim() === "") return "";
@@ -9835,8 +9793,7 @@ ${extractedCode}`;
   /**
    * Generate preview for insertion
    */
-  generateInsertionPreview(oldContent, newContent, insertLine) {
-    oldContent.split("\n");
+  generateInsertionPreview(_oldContent, newContent, insertLine) {
     const newLines = newContent.split("\n");
     let preview = `Code Insertion Preview:
 `;
@@ -14148,7 +14105,7 @@ var ClaudeMdParserImpl = class {
         content,
         hasDocumentationSection
       };
-    } catch (error) {
+    } catch {
       return {
         exists: false,
         content: "",
@@ -15145,7 +15102,7 @@ var ReadmeGenerator = class {
         }
       }
       return analysis;
-    } catch (error) {
+    } catch {
       return analysis;
     }
   }
@@ -15607,7 +15564,7 @@ var CommentsGenerator = class {
     }
     return `${func.name} function`;
   }
-  getIndentation(lineNumber) {
+  getIndentation(_lineNumber) {
     return "";
   }
   countAddedComments(analysis) {
@@ -15682,7 +15639,7 @@ ${stats}`,
           await this.parseApiFile(fullPath, documentation);
         }
       }
-    } catch (error) {
+    } catch {
     }
   }
   isApiFile(fileName) {
@@ -15767,7 +15724,7 @@ ${stats}`,
       if (moduleInfo.exports.length > 0) {
         documentation.modules.push(moduleInfo);
       }
-    } catch (error) {
+    } catch {
     }
   }
   getModuleName(relativePath) {
@@ -16068,7 +16025,7 @@ var ChangelogGenerator = class {
           scope: void 0
         });
       });
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -16290,7 +16247,7 @@ var UpdateAgentDocs = class {
           encoding: "utf-8"
         });
         analysis.gitCommits = commits.trim().split("\n").filter(Boolean);
-      } catch (error) {
+      } catch {
       }
       try {
         const changedFiles = execSync("git diff --name-only HEAD~5..HEAD", {
@@ -16298,14 +16255,14 @@ var UpdateAgentDocs = class {
           encoding: "utf-8"
         });
         analysis.filesChanged = changedFiles.trim().split("\n").filter(Boolean);
-      } catch (error) {
+      } catch {
         analysis.filesChanged = await this.getRecentlyModifiedFiles();
       }
       analysis.architectureChanges = this.detectArchitectureChanges(analysis.filesChanged);
       analysis.configChanges = this.detectConfigChanges(analysis.filesChanged);
       analysis.hasNewFeatures = this.detectNewFeatures(analysis.gitCommits);
       return analysis;
-    } catch (error) {
+    } catch {
       return analysis;
     }
   }
@@ -16326,7 +16283,7 @@ var UpdateAgentDocs = class {
             }
           }
         }
-      } catch (error) {
+      } catch {
       }
     };
     await scanDir(this.config.rootPath);
@@ -16381,7 +16338,7 @@ var UpdateAgentDocs = class {
           await ops9.promises.writeFile(archPath, updatedContent);
           updatedFiles.push(".agent/system/architecture.md");
         }
-      } catch (error) {
+      } catch {
       }
     }
     return updatedFiles;
@@ -16419,7 +16376,7 @@ Updated By: /update-agent-docs after detecting changes${recentChangesSection}`
       }
       await ops9.promises.writeFile(criticalStatePath, updatedContent);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -16626,7 +16583,7 @@ var SubagentFramework = class {
     }
     this.activeTasks.delete(task.id);
   }
-  async executeInIsolatedContext(context, config2) {
+  async executeInIsolatedContext(context, _config) {
     switch (context.type) {
       case "docgen":
         return this.simulateDocGenAgent(context);
@@ -16670,7 +16627,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulatePRDAssistantAgent(context) {
-    const { prdPath, prdContent } = context.data;
+    const { prdPath: _prdPath, prdContent: _prdContent } = context.data;
     await this.delay(1500);
     return {
       output: {
@@ -16688,7 +16645,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulateDeltaAgent(context) {
-    const { fromCommit, toCommit } = context.data;
+    const { fromCommit, toCommit: _toCommit } = context.data;
     await this.delay(1e3);
     return {
       output: {
@@ -16702,7 +16659,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulateTokenOptimizerAgent(context) {
-    const { currentTokens, targetReduction } = context.data;
+    const { currentTokens, targetReduction: _targetReduction } = context.data;
     await this.delay(500);
     return {
       output: {
@@ -16741,7 +16698,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulateSentinelAgent(context) {
-    const { errorLogs, recentCommands } = context.data;
+    const { errorLogs: _errorLogs, recentCommands: _recentCommands } = context.data;
     await this.delay(800);
     return {
       output: {
@@ -16755,7 +16712,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulateRegressionHunterAgent(context) {
-    const { proposedChanges, knownFailures } = context.data;
+    const { proposedChanges: _proposedChanges, knownFailures: _knownFailures } = context.data;
     await this.delay(1200);
     return {
       output: {
@@ -16769,7 +16726,7 @@ This is a generated document for ${projectPath}.
     };
   }
   async simulateGuardrailAgent(context) {
-    const { planDescription, rules } = context.data;
+    const { planDescription: _planDescription, rules: _rules } = context.data;
     await this.delay(600);
     return {
       output: {
@@ -16926,7 +16883,7 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
     }
     return "Unknown trigger";
   }
-  analyzeRootCause(error, context) {
+  analyzeRootCause(error, _context) {
     const errorMessage = error?.message || "";
     if (errorMessage.includes("ENOENT") || errorMessage.includes("not found")) {
       return "File or resource not found";
@@ -16945,7 +16902,7 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
     }
     return "Root cause requires investigation";
   }
-  suggestFix(error, context) {
+  suggestFix(error, _context) {
     const errorMessage = error?.message || "";
     if (errorMessage.includes("ENOENT")) {
       return "Ensure the required file or directory exists before accessing it";
@@ -17008,7 +16965,7 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
         }
       }
       return Math.max(0, count - 1);
-    } catch (error) {
+    } catch {
       return 0;
     }
   }
@@ -17143,7 +17100,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           }
         }
       }
-    } catch (error) {
+    } catch {
     }
     return {
       violations,
@@ -17166,7 +17123,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           if (guardrail) {
             guardrails.push(guardrail);
           }
-        } catch (error) {
+        } catch {
         }
       }
     }
@@ -17193,7 +17150,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
         pattern: patternMatch[1],
         enabled: statusMatch ? statusMatch[1].includes("Enabled") : true
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -17231,7 +17188,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           if (incident) {
             incidents.push(incident);
           }
-        } catch (error) {
+        } catch {
         }
       }
     }
@@ -17257,7 +17214,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
         recurrenceCount: 0,
         relatedFiles: []
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -18588,8 +18545,8 @@ var Colors = {
   AccentYellow: "yellow",
   Gray: "gray"};
 var MaxSizedBox = ({
-  maxHeight,
-  maxWidth,
+  maxHeight: _maxHeight,
+  maxWidth: _maxWidth,
   children,
   ...props
 }) => {
@@ -18781,45 +18738,92 @@ var renderDiffContent = (parsedLines, filename, tabWidth = DEFAULT_TAB_WIDTH, av
     key
   );
 };
-marked.setOptions({
-  renderer: new TerminalRenderer({
-    // Optimize for terminal display
-    code: (code) => code,
-    // Simplified code rendering
-    blockquote: (quote) => `  ${quote}`,
-    // Simplified blockquote
-    html: () => "",
-    // Strip HTML
-    heading: (text, level) => {
-      const prefix = "#".repeat(level);
-      return `${prefix} ${text}
-`;
-    },
-    hr: () => "\u2500".repeat(40) + "\n",
-    // Simplified horizontal rule
-    list: (body) => body,
-    // Simplified list
-    listitem: (text) => `  \u2022 ${text}
-`,
-    // Simplified list item
-    paragraph: (text) => `${text}
-`,
-    // Simplified paragraph
-    table: (header, body) => `${header}${body}`,
-    // Simplified table
-    tablerow: (content) => `${content}
-`,
-    // Simplified table row
-    tablecell: (content) => `${content} `
-    // Simplified table cell
-  })
-});
 function MarkdownRenderer({ content }) {
   try {
-    const result = marked.parse(content);
-    const rendered = typeof result === "string" ? result : content;
-    const lines = rendered.split("\n");
-    return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: lines.map((line, index) => /* @__PURE__ */ jsx(Text, { children: line }, index)) });
+    const lines = content.split("\n");
+    const renderedLines = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        const text = headingMatch[2];
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Text, { bold: true, color: level <= 2 ? "cyan" : "white", children: text }, i)
+        );
+        continue;
+      }
+      if (line.includes("**") || line.includes("__")) {
+        const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Box, { flexDirection: "row", children: parts.map((part, idx) => {
+            if (part.startsWith("**") && part.endsWith("**")) {
+              return /* @__PURE__ */ jsx(Text, { bold: true, children: part.slice(2, -2) }, idx);
+            } else if (part.startsWith("__") && part.endsWith("__")) {
+              return /* @__PURE__ */ jsx(Text, { bold: true, children: part.slice(2, -2) }, idx);
+            }
+            return /* @__PURE__ */ jsx(Text, { children: part }, idx);
+          }) }, i)
+        );
+        continue;
+      }
+      if (line.startsWith("```")) {
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith("```")) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Box, { flexDirection: "column", marginLeft: 2, children: codeLines.map((codeLine, idx) => /* @__PURE__ */ jsx(Text, { color: "gray", children: codeLine }, idx)) }, i)
+        );
+        continue;
+      }
+      if (line.includes("`")) {
+        const parts = line.split(/(`[^`]+`)/g);
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Box, { flexDirection: "row", children: parts.map((part, idx) => {
+            if (part.startsWith("`") && part.endsWith("`")) {
+              return /* @__PURE__ */ jsx(Text, { color: "gray", children: part.slice(1, -1) }, idx);
+            }
+            return /* @__PURE__ */ jsx(Text, { children: part }, idx);
+          }) }, i)
+        );
+        continue;
+      }
+      const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+      if (listMatch) {
+        const indent = listMatch[1].length;
+        const text = listMatch[3];
+        renderedLines.push(
+          /* @__PURE__ */ jsxs(Box, { marginLeft: indent, children: [
+            /* @__PURE__ */ jsx(Text, { color: "cyan", children: "\u2022 " }),
+            /* @__PURE__ */ jsx(Text, { children: text })
+          ] }, i)
+        );
+        continue;
+      }
+      if (line.startsWith(">")) {
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Box, { marginLeft: 2, children: /* @__PURE__ */ jsx(Text, { color: "gray", dimColor: true, children: line.substring(1).trim() }) }, i)
+        );
+        continue;
+      }
+      if (line.match(/^(-{3,}|\*{3,})$/)) {
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(40) }, i)
+        );
+        continue;
+      }
+      if (line.trim()) {
+        renderedLines.push(
+          /* @__PURE__ */ jsx(Text, { children: line }, i)
+        );
+      } else {
+        renderedLines.push(/* @__PURE__ */ jsx(Text, { children: " " }, i));
+      }
+    }
+    return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: renderedLines });
   } catch (error) {
     if (process.env.DEBUG === "1") {
       console.error("Markdown rendering error:", error);
@@ -18827,6 +18831,45 @@ function MarkdownRenderer({ content }) {
     return /* @__PURE__ */ jsx(Text, { children: content });
   }
 }
+var TodoList = ({ todos }) => {
+  if (!todos || todos.length === 0) {
+    return /* @__PURE__ */ jsx(Text, { color: "gray", children: "No todos created yet" });
+  }
+  const getCheckbox = (status) => {
+    switch (status) {
+      case "completed":
+        return "\u25CF";
+      case "in_progress":
+        return "\u25D0";
+      case "pending":
+        return "\u25CB";
+      default:
+        return "\u25CB";
+    }
+  };
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "completed":
+        return "green";
+      case "in_progress":
+        return "cyan";
+      case "pending":
+        return "white";
+      default:
+        return "white";
+    }
+  };
+  return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: todos.map((todo, index) => {
+    const checkbox = getCheckbox(todo.status);
+    const statusColor = getStatusColor(todo.status);
+    const isCompleted = todo.status === "completed";
+    return /* @__PURE__ */ jsx(Box, { marginLeft: index === 0 ? 0 : 2, children: /* @__PURE__ */ jsxs(Text, { color: statusColor, strikethrough: isCompleted, children: [
+      checkbox,
+      " ",
+      todo.content
+    ] }) }, todo.id);
+  }) });
+};
 var truncateContent = (content, maxLines = 15) => {
   const lines = content.split("\n");
   if (lines.length <= maxLines) {
@@ -18924,6 +18967,8 @@ var MemoizedChatEntry = React3.memo(
               return "Created Todo";
             case "update_todo_list":
               return "Updated Todo";
+            case "view_todo_list":
+              return "View Todo";
             default:
               return "Tool";
           }
@@ -18964,6 +19009,7 @@ var MemoizedChatEntry = React3.memo(
         };
         const shouldShowDiff = entry.toolCall?.function?.name === "str_replace_editor" && entry.toolResult?.success && entry.content.includes("Updated") && entry.content.includes("---") && entry.content.includes("+++");
         const shouldShowFileContent = (entry.toolCall?.function?.name === "view_file" || entry.toolCall?.function?.name === "create_file") && entry.toolResult?.success && !shouldShowDiff;
+        const isTodoTool = (entry.toolCall?.function?.name === "create_todo_list" || entry.toolCall?.function?.name === "update_todo_list" || entry.toolCall?.function?.name === "view_todo_list") && entry.toolResult?.success && entry.toolResult?.data;
         return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginTop: 1, children: [
           /* @__PURE__ */ jsxs(Box, { children: [
             /* @__PURE__ */ jsx(Text, { color: "magenta", children: "\u23FA" }),
@@ -18972,7 +19018,13 @@ var MemoizedChatEntry = React3.memo(
               filePath ? `${actionName}(${filePath})` : actionName
             ] })
           ] }),
-          /* @__PURE__ */ jsx(Box, { marginLeft: 2, flexDirection: "column", children: isExecuting ? /* @__PURE__ */ jsx(Text, { color: "cyan", children: "\u23BF Executing..." }) : shouldShowFileContent ? /* @__PURE__ */ jsxs(Box, { flexDirection: "column", children: [
+          /* @__PURE__ */ jsx(Box, { marginLeft: 2, flexDirection: "column", children: isExecuting ? /* @__PURE__ */ jsx(Text, { color: "cyan", children: "\u23BF Executing..." }) : isTodoTool ? /* @__PURE__ */ jsxs(Box, { flexDirection: "column", children: [
+            /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+              "\u23BF ",
+              entry.content
+            ] }),
+            /* @__PURE__ */ jsx(Box, { marginLeft: 2, flexDirection: "column", children: /* @__PURE__ */ jsx(TodoList, { todos: entry.toolResult?.data }) })
+          ] }) : shouldShowFileContent ? /* @__PURE__ */ jsxs(Box, { flexDirection: "column", children: [
             /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u23BF File contents:" }),
             /* @__PURE__ */ jsx(Box, { marginLeft: 2, flexDirection: "column", children: renderFileContent(entry.content) })
           ] }) : shouldShowDiff ? (
@@ -19102,18 +19154,14 @@ var ChatInput = React3.memo(function ChatInput2({
 });
 function MCPStatus({}) {
   const [connectedServers, setConnectedServers] = useState([]);
-  const [availableTools, setAvailableTools] = useState([]);
   useEffect(() => {
     const updateStatus = () => {
       try {
         const manager = getMCPManager();
         const servers = manager.getServers();
-        const tools = manager.getTools();
         setConnectedServers(servers);
-        setAvailableTools(tools);
-      } catch (error) {
+      } catch {
         setConnectedServers([]);
-        setAvailableTools([]);
       }
     };
     const initialTimer = setTimeout(updateStatus, 2e3);
@@ -19303,12 +19351,12 @@ function ApiKeyInput({ onApiKeySet }) {
         manager.updateUserSetting("apiKey", apiKey);
         console.log(`
 \u2705 API key saved to ~/.grok/user-settings.json`);
-      } catch (error2) {
+      } catch {
         console.log("\n\u26A0\uFE0F Could not save API key to settings file");
         console.log("API key set for current session only");
       }
       onApiKeySet(agent);
-    } catch (error2) {
+    } catch {
       setError("Invalid API key format");
       setIsSubmitting(false);
     }

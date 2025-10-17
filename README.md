@@ -676,6 +676,35 @@ Proceed with execution? (y/n)
 - **Risk Mitigation**: Suggestions for reducing risk and improving success rate
 - **Transaction Support**: Multi-file operations are atomic - all succeed or all rollback
 
+### Clean UI Mode
+
+By default, Grok CLI uses a **minimal display mode** that shows only status messages without detailed code content or diffs. This provides a cleaner experience and prevents UI rendering issues.
+
+**What you'll see:**
+- ✅ Tool execution status (e.g., "Read(file.txt)", "Update(file.txt)")
+- ✅ Simple success/error messages
+- ✅ AI assistant responses
+- ✅ Todo lists and structured data
+
+**What's hidden by default:**
+- ❌ File contents when reading files
+- ❌ Detailed diffs when editing files
+
+**Enable verbose mode when needed:**
+
+```bash
+# Show file contents
+SHOW_FILE_CONTENT=1 grok
+
+# Show detailed diffs
+SHOW_DIFFS=1 grok
+
+# Show both
+SHOW_FILE_CONTENT=1 SHOW_DIFFS=1 grok
+```
+
+See [CLEAN_UI_MODE.md](CLEAN_UI_MODE.md) for full documentation.
+
 ### Testing
 
 The Task Planning Framework includes comprehensive integration tests:

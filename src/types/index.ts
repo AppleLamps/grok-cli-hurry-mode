@@ -2,7 +2,7 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
-  data?: any;
+  data?: any; // Structured data for UI rendering (e.g., TodoItem[], search results, etc.)
   metadata?: Record<string, any>;
 }
 

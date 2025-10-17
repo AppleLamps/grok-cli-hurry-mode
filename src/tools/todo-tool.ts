@@ -10,52 +10,6 @@ export interface TodoItem {
 export class TodoTool {
   private todos: TodoItem[] = [];
 
-  formatTodoList(): string {
-    if (this.todos.length === 0) {
-      return 'No todos created yet';
-    }
-
-    const getCheckbox = (status: string): string => {
-      switch (status) {
-        case 'completed':
-          return '●';
-        case 'in_progress':
-          return '◐';
-        case 'pending':
-          return '○';
-        default:
-          return '○';
-      }
-    };
-
-    const getStatusColor = (status: string): string => {
-      switch (status) {
-        case 'completed':
-          return '\x1b[32m'; // Green
-        case 'in_progress':
-          return '\x1b[36m'; // Cyan
-        case 'pending':
-          return '\x1b[37m'; // White/default
-        default:
-          return '\x1b[0m'; // Reset
-      }
-    };
-
-    const reset = '\x1b[0m';
-    let output = '';
-
-    this.todos.forEach((todo, index) => {
-      const checkbox = getCheckbox(todo.status);
-      const statusColor = getStatusColor(todo.status);
-      const strikethrough = todo.status === 'completed' ? '\x1b[9m' : '';
-      const indent = index === 0 ? '' : '  ';
-
-      output += `${indent}${statusColor}${strikethrough}${checkbox} ${todo.content}${reset}\n`;
-    });
-
-    return output;
-  }
-
   async createTodoList(todos: TodoItem[]): Promise<ToolResult> {
     try {
       // Validate todos

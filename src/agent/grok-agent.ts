@@ -44,7 +44,7 @@ export interface ChatEntry {
   timestamp: Date;
   toolCalls?: GrokToolCall[];
   toolCall?: GrokToolCall;
-  toolResult?: { success: boolean; output?: string; error?: string };
+  toolResult?: ToolResult;
   isStreaming?: boolean;
 }
 

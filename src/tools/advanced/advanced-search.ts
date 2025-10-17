@@ -63,7 +63,7 @@ export class AdvancedSearchTool {
   async search(searchPath: string, options: SearchOptions): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(searchPath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -114,7 +114,7 @@ export class AdvancedSearchTool {
   async searchAndReplace(searchPath: string, options: ReplaceOptions): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(searchPath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -200,7 +200,7 @@ export class AdvancedSearchTool {
   async findFiles(searchPath: string, pattern: string, options: { isRegex?: boolean; maxResults?: number } = {}): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(searchPath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -226,7 +226,7 @@ export class AdvancedSearchTool {
           matches = regex.test(fileName) || regex.test(relativePath);
         } else {
           matches = fileName.toLowerCase().includes(pattern.toLowerCase()) ||
-                   relativePath.toLowerCase().includes(pattern.toLowerCase());
+            relativePath.toLowerCase().includes(pattern.toLowerCase());
         }
 
         if (matches) {
@@ -236,7 +236,7 @@ export class AdvancedSearchTool {
 
       return {
         success: true,
-        output: matchingFiles.length > 0 
+        output: matchingFiles.length > 0
           ? `Found ${matchingFiles.length} files:\n${matchingFiles.join('\n')}`
           : 'No matching files found'
       };
@@ -267,7 +267,7 @@ export class AdvancedSearchTool {
         const flags = options.caseSensitive ? 'g' : 'gi';
         pattern = new RegExp(`${wordBoundary}${escapedPattern}${wordBoundary}`, flags);
       }
-    } catch (error) {
+    } catch {
       throw new Error(`Invalid regex pattern: ${options.pattern}`);
     }
 
@@ -288,7 +288,7 @@ export class AdvancedSearchTool {
         if (options.showContext && options.showContext > 0) {
           const contextStart = Math.max(0, i - options.showContext);
           const contextEnd = Math.min(lines.length, i + options.showContext + 1);
-          
+
           searchMatch.beforeContext = lines.slice(contextStart, i);
           searchMatch.afterContext = lines.slice(i + 1, contextEnd);
         }
@@ -315,7 +315,7 @@ export class AdvancedSearchTool {
   private async replaceInFile(filePath: string, options: ReplaceOptions): Promise<ReplaceResult> {
     try {
       const content = await ops.promises.readFile(filePath, 'utf-8');
-      
+
       let pattern: RegExp;
       try {
         if (options.isRegex) {
@@ -327,7 +327,7 @@ export class AdvancedSearchTool {
           const flags = options.caseSensitive ? 'g' : 'gi';
           pattern = new RegExp(`${wordBoundary}${escapedPattern}${wordBoundary}`, flags);
         }
-      } catch (error) {
+      } catch {
         return {
           filePath: path.relative(process.cwd(), filePath),
           replacements: 0,
@@ -370,13 +370,13 @@ export class AdvancedSearchTool {
    */
   private async getFilesRecursively(dirPath: string, options?: SearchOptions): Promise<string[]> {
     const files: string[] = [];
-    
+
     const walk = async (currentPath: string) => {
       const entries = await ops.promises.readdir(currentPath, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
-        
+
         if (entry.isDirectory()) {
           // Skip common directories that shouldn't be searched
           if (this.shouldSkipDirectory(entry.name)) {
@@ -413,7 +413,7 @@ export class AdvancedSearchTool {
       '.pytest_cache',
       'vendor'
     ];
-    
+
     return skipDirs.includes(dirName) || dirName.startsWith('.');
   }
 
@@ -423,7 +423,7 @@ export class AdvancedSearchTool {
   private shouldIncludeFile(filePath: string, options?: SearchOptions): boolean {
     const fileName = path.basename(filePath);
     const ext = path.extname(fileName);
-    
+
     // Skip binary files and common non-text files
     const skipExtensions = [
       '.exe', '.dll', '.so', '.dylib', '.bin',
@@ -432,7 +432,7 @@ export class AdvancedSearchTool {
       '.zip', '.tar', '.gz', '.rar', '.7z',
       '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
     ];
-    
+
     if (skipExtensions.includes(ext.toLowerCase())) {
       return false;
     }
@@ -468,7 +468,7 @@ export class AdvancedSearchTool {
       .replace(/\./g, '\\.')
       .replace(/\*/g, '.*')
       .replace(/\?/g, '.');
-    
+
     const regex = new RegExp(`^${regexPattern}$`, 'i');
     return regex.test(path.basename(filePath)) || regex.test(filePath);
   }
@@ -485,10 +485,10 @@ export class AdvancedSearchTool {
 
     for (const result of results) {
       output += `${result.filePath} (${result.totalMatches} matches):\n`;
-      
+
       for (const match of result.matches) {
         output += `  ${match.line}:${match.column}: ${match.text.trim()}\n`;
-        
+
         if (options.showContext && (match.beforeContext || match.afterContext)) {
           if (match.beforeContext) {
             for (const contextLine of match.beforeContext) {
@@ -515,7 +515,7 @@ export class AdvancedSearchTool {
   private formatReplaceResults(results: ReplaceResult[], isDryRun: boolean): string {
     const totalReplacements = results.reduce((sum, r) => sum + r.replacements, 0);
     const action = isDryRun ? 'Would replace' : 'Replaced';
-    
+
     let output = `${action} ${totalReplacements} occurrences in ${results.length} files:\n\n`;
 
     for (const result of results) {

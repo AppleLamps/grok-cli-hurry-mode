@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface ApiDocsConfig {
@@ -93,7 +92,7 @@ export class ApiDocsGenerator {
     try {
       // Scan for API files
       const documentation = await this.scanApiFiles();
-      
+
       if (documentation.functions.length === 0 && documentation.classes.length === 0) {
         return {
           success: false,
@@ -102,7 +101,7 @@ export class ApiDocsGenerator {
       }
 
       // Generate documentation content
-      const content = this.config.outputFormat === 'md' 
+      const content = this.config.outputFormat === 'md'
         ? this.generateMarkdown(documentation)
         : this.generateHtml(documentation);
 
@@ -137,8 +136,8 @@ export class ApiDocsGenerator {
     };
 
     // Default scan paths if not specified
-    const scanPaths = this.config.scanPaths.length > 0 
-      ? this.config.scanPaths 
+    const scanPaths = this.config.scanPaths.length > 0
+      ? this.config.scanPaths
       : ['src/', 'lib/', './'];
 
     for (const scanPath of scanPaths) {
@@ -164,7 +163,7 @@ export class ApiDocsGenerator {
           await this.parseApiFile(fullPath, documentation);
         }
       }
-    } catch (error) {
+    } catch {
       // Skip directories we can't read
     }
   }
@@ -172,10 +171,10 @@ export class ApiDocsGenerator {
   private isApiFile(fileName: string): boolean {
     const apiExtensions = ['.ts', '.js', '.tsx', '.jsx'];
     const ext = path.extname(fileName);
-    return apiExtensions.includes(ext) && 
-           !fileName.includes('.test.') && 
-           !fileName.includes('.spec.') &&
-           !fileName.includes('.d.ts');
+    return apiExtensions.includes(ext) &&
+      !fileName.includes('.test.') &&
+      !fileName.includes('.spec.') &&
+      !fileName.includes('.d.ts');
   }
 
   private async parseApiFile(filePath: string, documentation: ApiDocumentation): Promise<void> {
@@ -268,7 +267,7 @@ export class ApiDocsGenerator {
         documentation.modules.push(moduleInfo);
       }
 
-    } catch (error) {
+    } catch {
       // Skip files we can't parse
     }
   }
@@ -286,7 +285,7 @@ export class ApiDocsGenerator {
       const parts = trimmed.split(':');
       const name = parts[0]?.trim() || '';
       const type = parts[1]?.trim() || 'any';
-      
+
       return {
         name: name.replace(/[?=].*$/, ''), // Remove optional/default markers
         type,
@@ -357,7 +356,7 @@ export class ApiDocsGenerator {
         if (func.description) content += `${func.description}\n\n`;
         content += `**Module:** \`${func.module}\`\n\n`;
         content += `**Signature:**\n\`\`\`typescript\n${func.signature}\n\`\`\`\n\n`;
-        
+
         if (func.parameters.length > 0) {
           content += `**Parameters:**\n`;
           func.parameters.forEach(param => {
@@ -368,7 +367,7 @@ export class ApiDocsGenerator {
           });
           content += '\n';
         }
-        
+
         content += `**Returns:** \`${func.returnType}\`\n\n`;
         if (func.isAsync) content += `⚡ **Async function**\n\n`;
       });

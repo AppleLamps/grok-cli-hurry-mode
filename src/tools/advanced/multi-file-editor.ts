@@ -15,6 +15,7 @@ import * as path from "path";
 import { writeFile as writeFilePromise } from "fs/promises";
 import { ToolResult } from "../../types/index.js";
 import { ConfirmationService } from "../../utils/confirmation-service.js";
+import { ConcurrencyPool } from "../../utils/concurrency.js";
 
 export interface FileOperation {
   type: 'create' | 'edit' | 'delete' | 'rename' | 'move';
@@ -44,6 +45,7 @@ export interface MultiFileTransaction {
 
 export class MultiFileEditorTool {
   private confirmationService = ConfirmationService.getInstance();
+  private concurrency = ConcurrencyPool.getInstance();
   private transactions: Map<string, MultiFileTransaction> = new Map();
   private currentTransactionId: string | null = null;
 
@@ -234,17 +236,27 @@ export class MultiFileEditorTool {
         }
       }
 
-      // Store rollback data before making changes
+      // Store rollback data before making changes (parallel reads for validation)
       const rollbackData: any[] = [];
 
-      // Execute operations
+      // Create rollback info in parallel for all operations
+      try {
+        const rollbackPromises = transaction.operations.map(op =>
+          this.concurrency.read(() => this.createRollbackInfo(op))
+        );
+        rollbackData.push(...await Promise.all(rollbackPromises));
+      } catch (error: any) {
+        return {
+          success: false,
+          error: `Failed to prepare transaction rollback data: ${error.message}`
+        };
+      }
+
+      // Execute operations sequentially (writes must be sequential for safety)
       const results: string[] = [];
 
       for (const [index, op] of transaction.operations.entries()) {
         try {
-          const rollbackInfo = await this.createRollbackInfo(op);
-          rollbackData.push(rollbackInfo);
-
           const result = await this.executeOperation(op);
           if (!result.success) {
             // Rollback already executed operations

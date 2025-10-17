@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface IncidentInfo {
@@ -56,10 +55,10 @@ export class SelfHealingSystem {
     try {
       const incident = await this.analyzeAndCreateIncident(error, context);
       const incidentPath = path.join(this.agentPath, 'incidents', `${incident.id}.md`);
-      
+
       // Ensure incidents directory exists
       await ops.mkdir(path.dirname(incidentPath), { recursive: true });
-      
+
       // Write incident documentation
       const incidentContent = this.generateIncidentContent(incident);
       await ops.promises.writeFile(incidentPath, incidentContent);
@@ -88,7 +87,7 @@ export class SelfHealingSystem {
   private async analyzeAndCreateIncident(error: any, context?: any): Promise<IncidentInfo> {
     const id = this.generateIncidentId();
     const now = new Date();
-    
+
     // Extract information from error
     const errorMessage = error?.message || error?.toString() || 'Unknown error';
     const title = this.extractErrorTitle(errorMessage);
@@ -121,7 +120,7 @@ export class SelfHealingSystem {
       .replace(/\s+at\s+.*$/, '')
       .replace(/\s+\(.*\)$/, '')
       .substring(0, 100);
-    
+
     return cleaned || 'Unknown Error';
   }
 
@@ -139,9 +138,9 @@ export class SelfHealingSystem {
     return 'Unknown trigger';
   }
 
-  private analyzeRootCause(error: any, context?: any): string {
+  private analyzeRootCause(error: any, _context?: any): string {
     const errorMessage = error?.message || '';
-    
+
     // Common patterns
     if (errorMessage.includes('ENOENT') || errorMessage.includes('not found')) {
       return 'File or resource not found';
@@ -158,13 +157,13 @@ export class SelfHealingSystem {
     if (errorMessage.includes('syntax error') || errorMessage.includes('unexpected token')) {
       return 'Code syntax error';
     }
-    
+
     return 'Root cause requires investigation';
   }
 
-  private suggestFix(error: any, context?: any): string {
+  private suggestFix(error: any, _context?: any): string {
     const errorMessage = error?.message || '';
-    
+
     if (errorMessage.includes('ENOENT')) {
       return 'Ensure the required file or directory exists before accessing it';
     }
@@ -177,13 +176,13 @@ export class SelfHealingSystem {
     if (errorMessage.includes('timeout')) {
       return 'Increase timeout value or optimize the operation';
     }
-    
+
     return 'Investigate error details and apply appropriate fix';
   }
 
   private assessImpact(error: any, context?: any): 'low' | 'medium' | 'high' {
     const errorMessage = error?.message || '';
-    
+
     if (errorMessage.includes('fatal') || errorMessage.includes('critical')) {
       return 'high';
     }
@@ -193,17 +192,17 @@ export class SelfHealingSystem {
     if (errorMessage.includes('warning')) {
       return 'low';
     }
-    
+
     return 'medium';
   }
 
   private extractRelatedFiles(error: any, context?: any): string[] {
     const files: string[] = [];
-    
+
     if (context?.files) {
       files.push(...context.files);
     }
-    
+
     if (error?.stack) {
       const stackLines = error.stack.split('\n');
       for (const line of stackLines) {
@@ -213,7 +212,7 @@ export class SelfHealingSystem {
         }
       }
     }
-    
+
     return [...new Set(files)]; // Remove duplicates
   }
 
@@ -238,7 +237,7 @@ export class SelfHealingSystem {
       }
 
       return Math.max(0, count - 1); // Subtract 1 for current incident
-    } catch (error) {
+    } catch {
       return 0;
     }
   }
@@ -320,7 +319,7 @@ ${incident.guardrailCreated ? `Guardrail created: ${incident.guardrailCreated}` 
   private createGuardrailPattern(incident: IncidentInfo): string | null {
     // Create simple patterns based on common error types
     const errorMessage = incident.trigger.toLowerCase();
-    
+
     if (errorMessage.includes('enoent') || errorMessage.includes('not found')) {
       return 'check_file_exists';
     }
@@ -330,14 +329,14 @@ ${incident.guardrailCreated ? `Guardrail created: ${incident.guardrailCreated}` 
     if (errorMessage.includes('module')) {
       return 'check_dependencies';
     }
-    
+
     return null;
   }
 
   private async saveGuardrail(guardrail: GuardrailRule): Promise<void> {
     const guardrailsPath = path.join(this.agentPath, 'guardrails');
     await ops.mkdir(guardrailsPath, { recursive: true });
-    
+
     const filePath = path.join(guardrailsPath, `${guardrail.id}.md`);
     const content = this.generateGuardrailContent(guardrail);
     await ops.promises.writeFile(filePath, content);
@@ -378,7 +377,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
 
     try {
       const guardrails = await this.loadAllGuardrails();
-      
+
       for (const guardrail of guardrails) {
         if (!guardrail.enabled) continue;
 
@@ -391,7 +390,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           }
         }
       }
-    } catch (error) {
+    } catch {
       // If we can't load guardrails, allow operation to proceed
     }
 
@@ -419,7 +418,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           if (guardrail) {
             guardrails.push(guardrail);
           }
-        } catch (error) {
+        } catch {
           // Skip files we can't parse
         }
       }
@@ -451,7 +450,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
         pattern: patternMatch[1],
         enabled: statusMatch ? statusMatch[1].includes('Enabled') : true
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -493,7 +492,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
           if (incident) {
             incidents.push(incident);
           }
-        } catch (error) {
+        } catch {
           // Skip files we can't parse
         }
       }
@@ -525,7 +524,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
         recurrenceCount: 0,
         relatedFiles: []
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }

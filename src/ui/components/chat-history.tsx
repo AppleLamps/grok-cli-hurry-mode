@@ -238,7 +238,8 @@ const MemoizedChatEntry = React.memo(
 
 MemoizedChatEntry.displayName = "MemoizedChatEntry";
 
-export function ChatHistory({
+// Memoize ChatHistory component to prevent unnecessary re-renders
+export const ChatHistory = React.memo(function ChatHistory({
   entries,
   isConfirmationActive = false,
 }: ChatHistoryProps) {
@@ -264,4 +265,4 @@ export function ChatHistory({
       ))}
     </Box>
   );
-}
+});

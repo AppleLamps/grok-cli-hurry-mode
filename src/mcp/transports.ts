@@ -1,6 +1,6 @@
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess } from "child_process";
 import { EventEmitter } from "events";
 import axios, { AxiosInstance } from "axios";
 
@@ -33,8 +33,8 @@ export class StdioTransport implements MCPTransport {
 
   async connect(): Promise<Transport> {
     // Create transport with environment variables to suppress verbose output
-    const env = { 
-      ...process.env, 
+    const env = {
+      ...process.env,
       ...this.config.env,
       // Try to suppress verbose output from mcp-remote
       MCP_REMOTE_QUIET: '1',
@@ -93,7 +93,7 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
     try {
       await this.client.get('/health');
       this.connected = true;
-    } catch (error) {
+    } catch {
       // If health endpoint doesn't exist, try a basic request
       this.connected = true;
     }
@@ -242,7 +242,7 @@ class StreamableHttpClientTransport extends EventEmitter implements Transport {
   async send(message: any): Promise<any> {
     console.log('StreamableHttpTransport: SSE endpoints require persistent connections, not suitable for MCP request-response pattern');
     console.log('StreamableHttpTransport: Message that would be sent:', JSON.stringify(message));
-    
+
     // For now, return a mock response to indicate the transport type is not compatible
     // with the MCP protocol's request-response pattern
     throw new Error('StreamableHttpTransport: SSE endpoints are not compatible with MCP request-response pattern. GitHub Copilot MCP may require a different integration approach.');

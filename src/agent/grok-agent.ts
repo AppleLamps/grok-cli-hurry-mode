@@ -1,12 +1,14 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import fs from "fs";
 import path from "path";
+import { createHash } from "node:crypto";
 import {
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
 } from "../grok/tools.js";
 import { loadMCPConfig } from "../mcp/config.js";
+import { debugLog } from "../utils/debug.js";
 import {
   TextEditorTool,
   MorphEditorTool,
@@ -27,6 +29,8 @@ import {
 } from "../tools/index.js";
 import { CodeIntelligenceEngine } from "../tools/intelligence/engine.js";
 import { ToolResult } from "../types/index.js";
+import { extractSelfCorrectError } from "../types/errors.js";
+import { MetricsCollector } from "../utils/metrics.js";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
@@ -104,7 +108,13 @@ export class GrokAgent extends EventEmitter {
     timestamp: number;
     fallbackStrategy: string;
   }>> = new Map();
+  // Metrics tracking
+  private metrics: MetricsCollector;
   private readonly maxCorrectionAttempts: number = 3;
+  // Loop detection
+  private operationTracker = require('../utils/operation-tracker.js').OperationTracker.getInstance();
+  private consecutiveIdenticalRequests: Map<string, number> = new Map();
+  private readonly maxIdenticalRequests: number = 2;
 
   constructor(
     apiKey: string,
@@ -155,6 +165,9 @@ export class GrokAgent extends EventEmitter {
     this.codeContext = new CodeContextTool(this.intelligenceEngine);
     this.refactoringAssistant = new RefactoringAssistantTool(this.intelligenceEngine);
     this.tokenCounter = createTokenCounter(modelToUse);
+
+    // Initialize metrics collector
+    this.metrics = MetricsCollector.getInstance();
 
     // Initialize task orchestrator
     this.taskOrchestrator = new TaskOrchestrator(process.cwd(), {
@@ -303,7 +316,7 @@ Current working directory: ${process.cwd()}`,
           await initializeMCPServers();
         }
       } catch (error) {
-        console.warn("MCP initialization failed:", error);
+        debugLog("MCP initialization failed:", error);
       } finally {
         this.mcpInitialized = true;
       }
@@ -543,6 +556,43 @@ Current working directory: ${process.cwd()}`,
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
+    // Check for identical request repetition
+    const requestHash = this.hashRequest(message);
+    const identicalCount = this.consecutiveIdenticalRequests.get(requestHash) || 0;
+
+    if (identicalCount >= this.maxIdenticalRequests) {
+      yield {
+        type: "content",
+        content: `\n\n⚠️ **Loop Detected**: This request has been repeated ${identicalCount + 1} times.\n\n` +
+          `The same operation appears to be executing repeatedly. This usually means:\n` +
+          `1. The task is already complete\n` +
+          `2. The desired changes have already been applied\n` +
+          `3. There's a misunderstanding about what needs to be done\n\n` +
+          `**Suggestion**: Please verify the current state and provide a different request if changes are still needed.`
+      };
+      this.consecutiveIdenticalRequests.delete(requestHash);
+      return;
+    }
+
+    // Check for operation loops
+    const loopCheck = this.operationTracker.detectLoop(5);
+    if (loopCheck.isLoop) {
+      yield {
+        type: "content",
+        content: `\n\n⚠️ **Operation Loop Detected**: ${loopCheck.suggestion}\n\n` +
+          `The same file operations are being repeated. This indicates the task may already be complete.\n\n` +
+          `**Recent operations**:\n${loopCheck.repeatedOperations?.map(op =>
+            `- ${op.type} ${op.filePath.split('/').pop()} at ${new Date(op.timestamp).toLocaleTimeString()}`
+          ).join('\n')}`
+      };
+      this.operationTracker.clearAll();
+      this.consecutiveIdenticalRequests.delete(requestHash);
+      return;
+    }
+
+    // Track this request
+    this.consecutiveIdenticalRequests.set(requestHash, identicalCount + 1);
+
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -621,7 +671,7 @@ Current working directory: ${process.cwd()}`,
             };
           }
         } catch (error: any) {
-          console.warn('Plan generation/execution failed, continuing with standard loop:', error);
+          debugLog('Plan generation/execution failed, continuing with standard loop:', error);
           yield {
             type: "content",
             content: `⚠️ Plan generation failed: ${error.message}\nProceeding with standard approach...\n\n`
@@ -766,9 +816,10 @@ Current working directory: ${process.cwd()}`,
 
               const result = await this.executeTool(toolCall);
 
-              // PHASE 3: Check for self-correction signal
+              // PHASE 3: Check for self-correction signal (typed error or legacy string)
               let correctionInfo = null;
-              if (!result.success && result.error?.includes('SELF_CORRECT_ATTEMPT')) {
+              const selfCorrectError = extractSelfCorrectError(result);
+              if (selfCorrectError) {
                 const correctionResult = this.handleSelfCorrectAttempt(result, toolCall, message);
 
                 if (correctionResult.shouldRetry && correctionResult.fallbackRequest) {
@@ -879,6 +930,9 @@ Current working directory: ${process.cwd()}`,
         };
       }
 
+      // Reset identical request counter on successful completion
+      this.consecutiveIdenticalRequests.delete(requestHash);
+
       yield { type: "done" };
     } catch (error: any) {
       // Check if this was a cancellation
@@ -909,8 +963,14 @@ Current working directory: ${process.cwd()}`,
   }
 
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    const operationId = this.metrics.startOperation(toolCall.function.name, {
+      toolCallId: toolCall.id,
+      args: toolCall.function.arguments
+    });
+
     try {
       const args = JSON.parse(toolCall.function.arguments);
+      let result: ToolResult;
 
       switch (toolCall.function.name) {
         case "view_file":
@@ -919,11 +979,11 @@ Current working directory: ${process.cwd()}`,
               args.start_line && args.end_line
                 ? [args.start_line, args.end_line]
                 : undefined;
-            const result = await this.textEditor.view(args.path, range);
+            const viewResult = await this.textEditor.view(args.path, range);
 
             // If file not found, provide helpful error
-            if (!result.success && result.error?.includes('not found')) {
-              return {
+            if (!viewResult.success && viewResult.error?.includes('not found')) {
+              result = {
                 success: false,
                 error: `SELF_CORRECT_ATTEMPT: File not found: ${args.path}. ` +
                   `Please verify the file path is correct. Try one of these:\n` +
@@ -933,18 +993,18 @@ Current working directory: ${process.cwd()}`,
                   `4. Use 'bash' with 'find' or 'ls' to locate the file`,
                 metadata: {
                   originalTool: 'view_file',
-                  originalError: result.error,
+                  originalError: viewResult.error,
                   suggestedApproach: 'search_for_file',
                   fallbackTools: ['search', 'bash']
                 }
               };
+            } else {
+              result = viewResult;
             }
-
-            return result;
           } catch (error: any) {
-            console.warn(`view_file tool failed: ${error.message}`);
+            debugLog(`view_file tool failed: ${error.message}`);
 
-            return {
+            result = {
               success: false,
               error: `SELF_CORRECT_ATTEMPT: Failed to view file: ${error.message}. ` +
                 `Please verify the file exists and is accessible.`,
@@ -956,6 +1016,7 @@ Current working directory: ${process.cwd()}`,
               }
             };
           }
+          break;
 
         case "create_file":
           try {
@@ -982,7 +1043,7 @@ Current working directory: ${process.cwd()}`,
 
             return result;
           } catch (error: any) {
-            console.warn(`create_file tool failed: ${error.message}`);
+            debugLog(`create_file tool failed: ${error.message}`);
 
             return {
               success: false,
@@ -1028,7 +1089,7 @@ Current working directory: ${process.cwd()}`,
 
             return result;
           } catch (error: any) {
-            console.warn(`str_replace_editor tool failed: ${error.message}`);
+            debugLog(`str_replace_editor tool failed: ${error.message}`);
 
             // Return self-correction signal instead of bash fallback
             return {
@@ -1081,7 +1142,7 @@ Current working directory: ${process.cwd()}`,
               includeHidden: args.include_hidden,
             });
           } catch (error: any) {
-            console.warn(`search tool failed, falling back to bash: ${error.message}`);
+            debugLog(`search tool failed, falling back to bash: ${error.message}`);
             // Fallback to bash grep/find
             let command = `grep -r "${args.query}" .`;
             if (args.include_pattern) {
@@ -1186,7 +1247,7 @@ Current working directory: ${process.cwd()}`,
             return await this.refactoringAssistant.execute(args);
           } catch (error: any) {
             // PHASE 3: Return SELF_CORRECT_ATTEMPT signal for LLM re-engagement
-            console.warn(`refactoring_assistant failed: ${error.message}`);
+            debugLog(`refactoring_assistant failed: ${error.message}`);
 
             return {
               success: false,
@@ -1234,25 +1295,34 @@ Current working directory: ${process.cwd()}`,
         default:
           // Check if this is an MCP tool
           if (toolCall.function.name.startsWith("mcp__")) {
-            return await this.executeMCPTool(toolCall);
+            result = await this.executeMCPTool(toolCall);
+          } else {
+            result = {
+              success: false,
+              error: `Unknown tool: ${toolCall.function.name}`,
+            };
           }
-
-          return {
-            success: false,
-            error: `Unknown tool: ${toolCall.function.name}`,
-          };
+          break;
       }
+
+      // Track metrics for successful execution
+      this.metrics.endOperation(operationId, result.success, result.error);
+      return result;
     } catch (error: any) {
       // Self-correction: Attempt fallback if available
-      console.warn(`Tool ${toolCall.function.name} failed: ${error.message}`);
+      debugLog(`Tool ${toolCall.function.name} failed: ${error.message}`);
 
       // Check if we have a fallback strategy for this tool
       if (this.fallbackStrategies.has(toolCall.function.name)) {
-        console.log(`Attempting self-correction for ${toolCall.function.name}...`);
-        return await this.attemptFallback(toolCall, error);
+        debugLog(`Attempting self-correction for ${toolCall.function.name}...`);
+        this.metrics.incrementRetry(operationId);
+        const fallbackResult = await this.attemptFallback(toolCall, error);
+        this.metrics.endOperation(operationId, fallbackResult.success, fallbackResult.error, 'fallback_strategy');
+        return fallbackResult;
       }
 
       // No fallback available, return error
+      this.metrics.endOperation(operationId, false, error.message);
       return {
         success: false,
         error: `Tool execution error: ${error.message}`,
@@ -1313,7 +1383,7 @@ Current working directory: ${process.cwd()}`,
       fs.writeFileSync(sessionFile, logLines);
     } catch (error) {
       // Silently ignore logging errors to not disrupt the app
-      console.warn('Failed to save session log:', error);
+      debugLog('Failed to save session log:', error);
     }
   }
 
@@ -1362,7 +1432,7 @@ Current working directory: ${process.cwd()}`,
       fs.appendFileSync(this.sessionLogPath, logLine);
     } catch (error) {
       // Silently ignore logging errors to avoid disrupting the app
-      console.warn('Failed to log session entry:', error);
+      debugLog('Failed to log session entry:', error);
     }
   }
 
@@ -1507,8 +1577,8 @@ Current working directory: ${process.cwd()}`,
       };
     }
 
-    console.log(`🔄 Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
-    console.log(`   Strategy: ${strategy.description}`);
+    debugLog(`🔄 Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
+    debugLog(`   Strategy: ${strategy.description}`);
 
     try {
       // Execute fallback based on strategy type
@@ -1517,17 +1587,17 @@ Current working directory: ${process.cwd()}`,
       // If successful, clear retry count
       if (result.success) {
         this.toolRetryCount.delete(retryKey);
-        console.log(`✅ Self-correction successful for ${toolName}`);
+        debugLog(`✅ Self-correction successful for ${toolName}`);
       }
 
       return result;
     } catch (fallbackError: any) {
-      console.warn(`❌ Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
+      debugLog(`❌ Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
 
       // Try next retry with exponential backoff
       if (currentRetries + 1 < this.maxRetries) {
         const backoffMs = Math.pow(2, currentRetries) * 1000; // 1s, 2s, 4s
-        console.log(`   Waiting ${backoffMs}ms before next retry...`);
+        debugLog(`   Waiting ${backoffMs}ms before next retry...`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
 
         // Retry with same tool call
@@ -1586,7 +1656,7 @@ Current working directory: ${process.cwd()}`,
 
     if (toolName === 'refactoring_assistant') {
       // Break down refactoring into multi_file_edit operations
-      console.log('   Breaking down refactoring into file edits...');
+      debugLog('   Breaking down refactoring into file edits...');
 
       const fallbackTool = strategy.fallbackTools[0]; // multi_file_edit
       const fallbackCall: GrokToolCall = {
@@ -1626,7 +1696,7 @@ Current working directory: ${process.cwd()}`,
     const toolName = originalToolCall.function.name;
 
     if (toolName === 'multi_file_edit' && args.operations) {
-      console.log(`   Executing ${args.operations.length} operations sequentially...`);
+      debugLog(`   Executing ${args.operations.length} operations sequentially...`);
 
       const results: any[] = [];
       const fallbackTool = strategy.fallbackTools[0]; // str_replace_editor
@@ -1677,7 +1747,7 @@ Current working directory: ${process.cwd()}`,
     strategy: FallbackStrategy,
     args: any
   ): Promise<ToolResult> {
-    console.log(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
+    debugLog(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
 
     const fallbackTool = strategy.fallbackTools[0];
     const fallbackCall: GrokToolCall = {
@@ -1702,7 +1772,7 @@ Current working directory: ${process.cwd()}`,
     originalError: Error
   ): Promise<ToolResult> {
     const toolName = originalToolCall.function.name;
-    console.log('   Falling back to bash commands...');
+    debugLog('   Falling back to bash commands...');
 
     try {
       if (toolName === 'symbol_search' || toolName === 'advanced_search') {
@@ -1797,7 +1867,7 @@ Current working directory: ${process.cwd()}`,
         plan: confirmResult.success ? plan : undefined
       };
     } catch (error: any) {
-      console.error('Plan generation error:', error);
+      debugLog('Plan generation error:', error);
       return { approved: false };
     }
   }
@@ -1852,7 +1922,7 @@ Current working directory: ${process.cwd()}`,
         results.push({ stepId: step.id, success: false, error: error.message });
 
         if (this.taskOrchestrator['config'].autoRollbackOnFailure) {
-          console.warn('Auto-rollback triggered');
+          debugLog('Auto-rollback triggered');
           break;
         }
       }
@@ -1892,7 +1962,7 @@ Current working directory: ${process.cwd()}`,
     });
     this.correctionAttempts.set(correctionKey, attempts);
 
-    console.log(`🔄 Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
+    debugLog(`🔄 Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
 
     return {
       shouldRetry: true,
@@ -1904,7 +1974,27 @@ Current working directory: ${process.cwd()}`,
    * Hash a request for tracking correction attempts
    */
   private hashRequest(request: string): string {
-    const crypto = require('crypto');
-    return crypto.createHash('md5').update(request).digest('hex');
+    return createHash('md5').update(request).digest('hex');
+  }
+
+  /**
+   * Get metrics summary
+   */
+  getMetricsSummary() {
+    return this.metrics.getAggregatedMetrics();
+  }
+
+  /**
+   * Print metrics summary to console
+   */
+  printMetricsSummary() {
+    this.metrics.printSummary();
+  }
+
+  /**
+   * Enable verbose metrics logging
+   */
+  setVerboseMetrics(verbose: boolean) {
+    this.metrics.setVerbose(verbose);
   }
 }

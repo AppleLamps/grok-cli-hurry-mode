@@ -54,7 +54,7 @@ export class FileTreeOperationsTool {
   async generateTree(rootPath: string, options: TreeFilterOptions = {}): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(rootPath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -144,8 +144,8 @@ export class FileTreeOperationsTool {
    * Copy directory structure (optionally with files)
    */
   async copyStructure(
-    sourcePath: string, 
-    destinationPath: string, 
+    sourcePath: string,
+    destinationPath: string,
     options: { includeFiles?: boolean; overwrite?: boolean } = {}
   ): Promise<ToolResult> {
     try {
@@ -210,7 +210,7 @@ export class FileTreeOperationsTool {
   ): Promise<ToolResult> {
     try {
       const resolvedSource = path.resolve(sourcePath);
-      
+
       if (!(await pathExists(resolvedSource))) {
         return {
           success: false,
@@ -222,7 +222,7 @@ export class FileTreeOperationsTool {
       const organization = await this.categorizeFiles(files, organizationType);
 
       const destBase = destinationBase ? path.resolve(destinationBase) : resolvedSource;
-      
+
       // Preview organization
       let preview = `Organization plan (${organizationType}):\n`;
       for (const [category, fileList] of Object.entries(organization)) {
@@ -288,7 +288,7 @@ export class FileTreeOperationsTool {
   async cleanupEmptyDirectories(rootPath: string): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(rootPath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -297,7 +297,7 @@ export class FileTreeOperationsTool {
       }
 
       const emptyDirs = await this.findEmptyDirectories(resolvedPath);
-      
+
       if (emptyDirs.length === 0) {
         return {
           success: true,
@@ -349,13 +349,13 @@ export class FileTreeOperationsTool {
    * Build tree structure recursively
    */
   private async buildTreeStructure(
-    dirPath: string, 
-    options: TreeFilterOptions, 
+    dirPath: string,
+    options: TreeFilterOptions,
     currentDepth: number
   ): Promise<FileTreeNode> {
     const stats = await ops.promises.stat(dirPath);
     const name = path.basename(dirPath);
-    
+
     const node: FileTreeNode = {
       name: name || path.basename(dirPath),
       path: dirPath,
@@ -366,10 +366,10 @@ export class FileTreeOperationsTool {
 
     if (stats.isDirectory() && (!options.maxDepth || currentDepth < options.maxDepth)) {
       node.children = [];
-      
+
       try {
         const entries = await ops.promises.readdir(dirPath, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           // Skip hidden files unless specified
           if (!options.includeHidden && entry.name.startsWith('.')) {
@@ -377,7 +377,7 @@ export class FileTreeOperationsTool {
           }
 
           const fullPath = path.join(dirPath, entry.name);
-          
+
           // Apply filters
           if (!this.passesFilters(fullPath, entry, options)) {
             continue;
@@ -394,7 +394,7 @@ export class FileTreeOperationsTool {
           }
           return a.name.localeCompare(b.name);
         });
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     }
@@ -408,16 +408,16 @@ export class FileTreeOperationsTool {
   private formatTree(node: FileTreeNode, prefix: string, isLast: boolean): string {
     const connector = isLast ? '└── ' : '├── ';
     let result = prefix + connector + node.name;
-    
+
     if (node.type === 'file' && node.size) {
       result += ` (${this.formatFileSize(node.size)})`;
     }
-    
+
     result += '\n';
 
     if (node.children) {
       const childPrefix = prefix + (isLast ? '    ' : '│   ');
-      
+
       for (let i = 0; i < node.children.length; i++) {
         const child = node.children[i];
         const isLastChild = i === node.children.length - 1;
@@ -432,8 +432,8 @@ export class FileTreeOperationsTool {
    * Check if file/directory passes filters
    */
   private passesFilters(
-    fullPath: string, 
-    entry: ops.Dirent, 
+    fullPath: string,
+    entry: ops.Dirent,
     options: TreeFilterOptions
   ): boolean {
     const name = entry.name;
@@ -477,7 +477,7 @@ export class FileTreeOperationsTool {
       .replace(/\./g, '\\.')
       .replace(/\*/g, '.*')
       .replace(/\?/g, '.');
-    
+
     const regex = new RegExp(`^${regexPattern}$`, 'i');
     return regex.test(text);
   }
@@ -597,7 +597,7 @@ export class FileTreeOperationsTool {
    */
   private generateOperationsPreview(operations: BulkOperation[]): string {
     let preview = `Bulk Operations Preview (${operations.length} operations):\n\n`;
-    
+
     for (const [index, op] of operations.entries()) {
       preview += `${index + 1}. ${op.type.toUpperCase()}: ${op.source}`;
       if (op.destination) {
@@ -616,15 +616,15 @@ export class FileTreeOperationsTool {
    * Copy structure recursively
    */
   private async copyStructureRecursive(
-    source: string, 
-    destination: string, 
+    source: string,
+    destination: string,
     options: { includeFiles?: boolean; overwrite?: boolean }
   ): Promise<void> {
     const stats = await ops.promises.stat(source);
 
     if (stats.isDirectory()) {
       await ops.promises.mkdir(destination, { recursive: true });
-      
+
       const entries = await ops.promises.readdir(source);
       for (const entry of entries) {
         const srcPath = path.join(source, entry);
@@ -641,13 +641,13 @@ export class FileTreeOperationsTool {
    */
   private async getFilesRecursively(dirPath: string): Promise<string[]> {
     const files: string[] = [];
-    
+
     const walk = async (currentPath: string) => {
       const entries = await ops.promises.readdir(currentPath, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
-        
+
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isFile()) {
@@ -664,7 +664,7 @@ export class FileTreeOperationsTool {
    * Categorize files for organization
    */
   private async categorizeFiles(
-    files: string[], 
+    files: string[],
     organizationType: 'type' | 'size' | 'date'
   ): Promise<Record<string, string[]>> {
     const categories: Record<string, string[]> = {};
@@ -715,7 +715,7 @@ export class FileTreeOperationsTool {
     const checkDirectory = async (currentPath: string): Promise<boolean> => {
       try {
         const entries = await ops.promises.readdir(currentPath);
-        
+
         if (entries.length === 0) {
           emptyDirs.push(currentPath);
           return true;
@@ -725,7 +725,7 @@ export class FileTreeOperationsTool {
         for (const entry of entries) {
           const fullPath = path.join(currentPath, entry);
           const stats = await ops.promises.stat(fullPath);
-          
+
           if (stats.isDirectory()) {
             const isEmpty = await checkDirectory(fullPath);
             if (!isEmpty) {
@@ -743,7 +743,7 @@ export class FileTreeOperationsTool {
         }
 
         return false;
-      } catch (error) {
+      } catch {
         return false;
       }
     };

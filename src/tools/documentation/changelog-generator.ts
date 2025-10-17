@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface ChangelogConfig {
@@ -47,7 +46,7 @@ export class ChangelogGenerator {
 
       // Get git commits
       const commits = await this.getGitCommits();
-      
+
       if (commits.length === 0) {
         return {
           success: false,
@@ -57,14 +56,14 @@ export class ChangelogGenerator {
 
       // Parse commits and organize by type
       const sections = this.organizeCommits(commits);
-      
+
       // Generate changelog content
       const content = this.generateChangelogContent(sections);
-      
+
       // Write to CHANGELOG.md
       const changelogPath = path.join(this.config.rootPath, 'CHANGELOG.md');
       const exists = existsSync(changelogPath);
-      
+
       if (exists) {
         // Prepend to existing changelog
         const existingContent = await ops.promises.readFile(changelogPath, 'utf-8');
@@ -78,7 +77,7 @@ export class ChangelogGenerator {
 
       return {
         success: true,
-        message: exists 
+        message: exists
           ? `✅ Updated CHANGELOG.md with ${commits.length} new entries`
           : `✅ Created CHANGELOG.md with ${commits.length} entries`,
         content
@@ -94,10 +93,10 @@ export class ChangelogGenerator {
 
   private async getGitCommits(): Promise<CommitInfo[]> {
     const { execSync } = require('child_process');
-    
+
     try {
       let gitCommand = 'git log --pretty=format:"%H|%ad|%an|%s|%b" --date=short';
-      
+
       if (this.config.sinceVersion) {
         gitCommand += ` ${this.config.sinceVersion}..HEAD`;
       } else if (this.config.commitCount) {
@@ -106,17 +105,17 @@ export class ChangelogGenerator {
         gitCommand += ' -n 50'; // Default to last 50 commits
       }
 
-      const output = execSync(gitCommand, { 
+      const output = execSync(gitCommand, {
         cwd: this.config.rootPath,
         encoding: 'utf-8'
       });
 
       const lines = output.trim().split('\n').filter((line: string) => line.trim());
-      
+
       return lines.map((line: string) => {
         const [hash, date, author, message, ...bodyParts] = line.split('|');
         const body = bodyParts.join('|').trim();
-        
+
         return this.parseCommit({
           hash: hash.substring(0, 7), // Short hash
           date,
@@ -128,7 +127,7 @@ export class ChangelogGenerator {
           scope: undefined
         });
       });
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -140,7 +139,7 @@ export class ChangelogGenerator {
 
     // Parse conventional commit format: type(scope): description
     const conventionalMatch = commit.message.match(/^(\w+)(?:\(([^)]+)\))?: (.+)/);
-    
+
     if (conventionalMatch) {
       const [, type, scope, description] = conventionalMatch;
       commit.type = type;
@@ -149,9 +148,9 @@ export class ChangelogGenerator {
     }
 
     // Check for breaking changes
-    commit.breaking = commit.message.includes('BREAKING CHANGE') || 
-                     commit.message.includes('!:') ||
-                     Boolean(commit.body && commit.body.includes('BREAKING CHANGE'));
+    commit.breaking = commit.message.includes('BREAKING CHANGE') ||
+      commit.message.includes('!:') ||
+      Boolean(commit.body && commit.body.includes('BREAKING CHANGE'));
 
     return commit;
   }
@@ -166,7 +165,7 @@ export class ChangelogGenerator {
 
   private organizeConventionalCommits(commits: CommitInfo[]): ChangelogSection[] {
     const sections: ChangelogSection[] = [];
-    
+
     // Breaking changes (always first)
     const breaking = commits.filter(c => c.breaking);
     if (breaking.length > 0) {
@@ -240,8 +239,8 @@ export class ChangelogGenerator {
     }
 
     // Other changes
-    const other = commits.filter(c => 
-      !c.breaking && 
+    const other = commits.filter(c =>
+      !c.breaking &&
       !['feat', 'fix', 'docs', 'perf', 'refactor', 'test', 'build', 'ci', 'chore'].includes(c.type || '')
     );
     if (other.length > 0) {
@@ -275,23 +274,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private generateChangelogContent(sections: ChangelogSection[]): string {
     const version = this.generateVersionNumber();
     const date = new Date().toISOString().split('T')[0];
-    
+
     let content = `## [${version}] - ${date}\n\n`;
 
     sections.forEach(section => {
       if (section.commits.length > 0) {
         content += `### ${section.title}\n\n`;
-        
+
         section.commits.forEach(commit => {
           const scope = commit.scope ? `**${commit.scope}**: ` : '';
           const hash = `([${commit.hash}])`;
-          
+
           if (this.config.format === 'conventional') {
             content += `- ${scope}${commit.message} ${hash}\n`;
           } else {
             content += `- ${commit.message} - ${commit.author} ${hash}\n`;
           }
-          
+
           // Add breaking change details
           if (commit.breaking && commit.body) {
             const breakingDetails = this.extractBreakingChangeDetails(commit.body);
@@ -300,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             }
           }
         });
-        
+
         content += '\n';
       }
     });

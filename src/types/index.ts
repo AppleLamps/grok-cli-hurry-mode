@@ -3,6 +3,7 @@ export interface ToolResult {
   output?: string;
   error?: string;
   data?: any;
+  metadata?: Record<string, any>;
 }
 
 export interface Tool {
@@ -32,3 +33,6 @@ export interface ConfirmationState {
   skipThisSession: boolean;
   pendingOperation: boolean;
 }
+
+// Re-export error types
+export { SelfCorrectError, isSelfCorrectError, extractSelfCorrectError } from './errors.js';

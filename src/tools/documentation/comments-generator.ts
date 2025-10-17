@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface CommentsConfig {
@@ -64,7 +63,7 @@ export class CommentsGenerator {
 
       const content = await ops.promises.readFile(this.config.filePath, 'utf-8');
       const analysis = this.analyzeCode(content);
-      
+
       if (analysis.hasExistingComments) {
         return {
           success: false,
@@ -73,16 +72,16 @@ export class CommentsGenerator {
       }
 
       const modifiedContent = this.addComments(content, analysis);
-      
+
       // Create backup
       const backupPath = this.config.filePath + '.backup';
       await ops.promises.writeFile(backupPath, content);
-      
+
       // Write modified content
       await ops.promises.writeFile(this.config.filePath, modifiedContent);
 
       const commentCount = this.countAddedComments(analysis);
-      
+
       return {
         success: true,
         message: `✅ Added ${commentCount} comments to ${path.basename(this.config.filePath)}\n📁 Backup created: ${path.basename(backupPath)}`,
@@ -100,7 +99,7 @@ export class CommentsGenerator {
   private analyzeCode(content: string): CodeAnalysis {
     const lines = content.split('\n');
     const language = this.detectLanguage();
-    
+
     const analysis: CodeAnalysis = {
       language,
       functions: [],
@@ -112,7 +111,7 @@ export class CommentsGenerator {
     // Simple regex-based parsing (could be enhanced with AST)
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      
+
       // Detect functions
       const funcMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/);
       if (funcMatch) {
@@ -183,13 +182,13 @@ export class CommentsGenerator {
     const lines = content.split('\n');
     const commentLines = lines.filter(line => {
       const trimmed = line.trim();
-      return trimmed.startsWith('//') || 
-             trimmed.startsWith('/*') || 
-             trimmed.startsWith('*') ||
-             trimmed.startsWith('#') ||
-             trimmed.includes('/**');
+      return trimmed.startsWith('//') ||
+        trimmed.startsWith('/*') ||
+        trimmed.startsWith('*') ||
+        trimmed.startsWith('#') ||
+        trimmed.includes('/**');
     });
-    
+
     // Consider "extensive" if more than 20% of lines are comments
     return commentLines.length / lines.length > 0.2;
   }
@@ -204,7 +203,7 @@ export class CommentsGenerator {
       for (const func of analysis.functions) {
         const commentLines = this.generateFunctionComment(func, analysis.language);
         const insertIndex = func.line - 1 + insertOffset;
-        
+
         // Insert comment lines before function
         modifiedLines.splice(insertIndex, 0, ...commentLines);
         insertOffset += commentLines.length;
@@ -216,7 +215,7 @@ export class CommentsGenerator {
       for (const cls of analysis.classes) {
         const commentLines = this.generateClassComment(cls, analysis.language);
         const insertIndex = cls.line - 1 + insertOffset;
-        
+
         modifiedLines.splice(insertIndex, 0, ...commentLines);
         insertOffset += commentLines.length;
       }
@@ -227,7 +226,7 @@ export class CommentsGenerator {
 
   private generateFunctionComment(func: FunctionInfo, language: string): string[] {
     const indent = this.getIndentation(func.line);
-    
+
     if (language === 'typescript' || language === 'javascript') {
       const lines = [
         `${indent}/**`,
@@ -244,7 +243,7 @@ export class CommentsGenerator {
 
       lines.push(`${indent} * @returns {${func.isAsync ? 'Promise<any>' : 'any'}} Return description`);
       lines.push(`${indent} */`);
-      
+
       return lines;
     }
 
@@ -253,7 +252,7 @@ export class CommentsGenerator {
 
   private generateClassComment(cls: ClassInfo, language: string): string[] {
     const indent = this.getIndentation(cls.line);
-    
+
     if (language === 'typescript' || language === 'javascript') {
       return [
         `${indent}/**`,
@@ -271,10 +270,10 @@ export class CommentsGenerator {
     if (func.name === 'constructor') {
       return 'Creates an instance of the class';
     }
-    
+
     // Generate smart descriptions based on function name
     const name = func.name.toLowerCase();
-    
+
     if (name.startsWith('get')) {
       return `Gets ${name.substring(3).replace(/([A-Z])/g, ' $1').toLowerCase()}`;
     }
@@ -297,11 +296,11 @@ export class CommentsGenerator {
     if (name.includes('handle')) {
       return `Handles ${name.replace('handle', '').replace(/([A-Z])/g, ' $1').toLowerCase()}`;
     }
-    
+
     return `${func.name} function`;
   }
 
-  private getIndentation(lineNumber: number): string {
+  private getIndentation(_lineNumber: number): string {
     // This would need access to the original line to detect indentation
     // For now, return empty string - could be enhanced
     return '';
@@ -309,15 +308,15 @@ export class CommentsGenerator {
 
   private countAddedComments(analysis: CodeAnalysis): number {
     let count = 0;
-    
+
     if (this.config.commentType === 'functions' || this.config.commentType === 'all') {
       count += analysis.functions.length;
     }
-    
+
     if (this.config.commentType === 'classes' || this.config.commentType === 'all') {
       count += analysis.classes.length;
     }
-    
+
     return count;
   }
 }

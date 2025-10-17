@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
-import pkg from '../../../package.json' with { type: 'json' };
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 import { Box, Text, DOMElement } from "ink";
 import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
@@ -21,6 +20,43 @@ interface ChatInterfaceProps {
   agent?: GrokAgent;
   initialMessage?: string;
 }
+
+// Logo component to display ASCII art and welcome text
+const Logo = React.memo(function Logo() {
+  return (
+    <Box flexDirection="column" marginBottom={2}>
+      <Text color="cyan" bold>
+        {`    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
+               dBP   dB'.BP  dBP.d8P
+  dBBBB    dBBBBK'  dB'.BP  dBBBBP'          dBP    dBP    dBP
+ dB' BB   dBP  BB  dB'.BP  dBP BB  dBBBBBP  dBP    dBP    dBP
+dBBBBBB  dBP  dB' dBBBBP  dBP dB'          dBBBBP dBBBBP dBP    `}
+      </Text>
+      <Text color="cyan" bold>
+        Tips for getting started:
+      </Text>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="gray">
+          1. Ask questions, edit files, or run commands.
+        </Text>
+        <Text color="gray">2. Be specific for the best results.</Text>
+        <Text color="gray">
+          3. Create GROK.md files to customize your interactions with Grok.
+        </Text>
+        <Text color="gray">
+          4. Press Shift+Tab to toggle auto-edit mode.
+        </Text>
+        <Text color="gray">
+          5. Run "/init-agent" to set up an .agent docs system for this project.
+        </Text>
+        <Text color="gray">
+          6. Run "/heal" after errors to capture a fix and add a guardrail.
+        </Text>
+        <Text color="gray">7. /help for more information.</Text>
+      </Box>
+    </Box>
+  );
+});
 
 // Main chat component that handles input when agent is available
 function ChatInterfaceWithAgent({
@@ -66,39 +102,8 @@ function ChatInterfaceWithAgent({
     isConfirmationActive: !!confirmationOptions,
   });
 
+  // Initialize chat history on mount
   useEffect(() => {
-    // Only clear console on non-Windows platforms or if not PowerShell
-    // Windows PowerShell can have issues with console.clear() causing flickering
-    const isWindows = process.platform === "win32";
-    const isPowerShell =
-      process.env.ComSpec?.toLowerCase().includes("powershell") ||
-      process.env.PSModulePath !== undefined;
-
-    if (!isWindows || !isPowerShell) {
-      console.clear();
-    }
-
-    // Add top padding
-    console.log("    ");
-
-
-
-    console.log(" ");
-
-    // Generate welcome text with margin to match Ink paddingX={2}
-    const logoOutput = "HURRY MODE" + "\n" + pkg.version;
-
-    const logoLines = logoOutput.split("\n");
-    logoLines.forEach((line: string) => {
-      if (line.trim()) {
-        console.log(" " + line); // Add 2 spaces for horizontal margin
-      } else {
-        console.log(line); // Keep empty lines as-is
-      }
-    });
-
-    console.log(" "); // Spacing after logo
-
     setChatHistory([]);
   }, []);
 
@@ -117,149 +122,98 @@ function ChatInterfaceWithAgent({
         setIsStreaming(true);
 
         try {
-          let streamingEntry: ChatEntry | null = null;
-          let accumulatedContent = "";
-          let lastTokenCount = 0;
-          let pendingToolCalls: any[] | null = null;
-          let pendingToolResults: Array<{ toolCall: any; toolResult: any }> = [];
-          let lastUpdateTime = Date.now();
-
-          const flushUpdates = () => {
-            const now = Date.now();
-            if (now - lastUpdateTime < 150) return; // Throttle to ~6-7 FPS
-
-            // Update token count if changed
-            if (lastTokenCount !== 0) {
-              setTokenCount(lastTokenCount);
-            }
-
-            // Handle accumulated content
-            if (accumulatedContent) {
-              if (!streamingEntry) {
-                const newStreamingEntry = {
-                  type: "assistant" as const,
-                  content: accumulatedContent,
-                  timestamp: new Date(),
-                  isStreaming: true,
-                };
-                setChatHistory((prev) => [...prev, newStreamingEntry]);
-                streamingEntry = newStreamingEntry;
-              } else {
-                setChatHistory((prev) =>
-                  prev.map((entry, idx) =>
-                    idx === prev.length - 1 && entry.isStreaming
-                      ? { ...entry, content: entry.content + accumulatedContent }
-                      : entry
-                  )
-                );
-              }
-              accumulatedContent = "";
-            }
-
-            // Handle pending tool calls
-            if (pendingToolCalls) {
-              setChatHistory((prev) =>
-                prev.map((entry) =>
-                  entry.isStreaming
-                    ? ({
-                      ...entry,
-                      isStreaming: false,
-                      toolCalls: pendingToolCalls || undefined,
-                    } as ChatEntry)
-                    : entry
-                )
-              );
-              streamingEntry = null;
-
-              // Add individual tool call entries
-              pendingToolCalls.forEach((toolCall) => {
-                const toolCallEntry: ChatEntry = {
-                  type: "tool_call",
-                  content: "Executing...",
-                  timestamp: new Date(),
-                  toolCall: toolCall,
-                };
-                setChatHistory((prev) => [...prev, toolCallEntry]);
-              });
-              pendingToolCalls = null;
-            }
-
-            // Handle pending tool results
-            if (pendingToolResults.length > 0) {
-              setChatHistory((prev) =>
-                prev.map((entry) => {
-                  if (entry.isStreaming) {
-                    return { ...entry, isStreaming: false };
-                  }
-                  // Update matching tool_call entries
-                  const matchingResult = pendingToolResults.find(
-                    (result) => entry.type === "tool_call" && entry.toolCall?.id === result.toolCall.id
-                  );
-                  if (matchingResult) {
-                    return {
-                      ...entry,
-                      type: "tool_result",
-                      content: matchingResult.toolResult.success
-                        ? matchingResult.toolResult.output || "Success"
-                        : matchingResult.toolResult.error || "Error occurred",
-                      toolResult: matchingResult.toolResult,
-                    };
-                  }
-                  return entry;
-                })
-              );
-              streamingEntry = null;
-              pendingToolResults = [];
-            }
-
-            lastUpdateTime = now;
-          };
-
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
-            switch (chunk.type) {
-              case "content":
-                if (chunk.content) {
-                  accumulatedContent += chunk.content;
-                }
-                break;
+            setChatHistory((prev) => {
+              const lastEntry = prev[prev.length - 1];
 
-              case "token_count":
-                if (chunk.tokenCount !== undefined) {
-                  lastTokenCount = chunk.tokenCount;
-                }
-                break;
+              switch (chunk.type) {
+                case "content":
+                  if (chunk.content) {
+                    // If last entry is streaming, append content
+                    if (lastEntry?.isStreaming) {
+                      return prev.map((entry, idx) =>
+                        idx === prev.length - 1
+                          ? { ...entry, content: entry.content + chunk.content }
+                          : entry
+                      );
+                    } else {
+                      // Create new streaming entry
+                      return [
+                        ...prev,
+                        {
+                          type: "assistant",
+                          content: chunk.content,
+                          timestamp: new Date(),
+                          isStreaming: true,
+                        },
+                      ];
+                    }
+                  }
+                  break;
 
-              case "tool_calls":
-                if (chunk.toolCalls) {
-                  pendingToolCalls = chunk.toolCalls;
-                }
-                break;
+                case "token_count":
+                  if (chunk.tokenCount !== undefined) {
+                    setTokenCount(chunk.tokenCount);
+                  }
+                  break;
 
-              case "tool_result":
-                if (chunk.toolCall && chunk.toolResult) {
-                  pendingToolResults.push({ toolCall: chunk.toolCall, toolResult: chunk.toolResult });
-                }
-                break;
+                case "tool_calls":
+                  if (chunk.toolCalls) {
+                    // Finalize streaming entry and add tool calls
+                    const updatedPrev = prev.map((entry) =>
+                      entry.isStreaming
+                        ? { ...entry, isStreaming: false, toolCalls: chunk.toolCalls }
+                        : entry
+                    );
 
-              case "done":
-                // Flush all remaining updates
-                flushUpdates();
-                break;
-            }
+                    // Add individual tool call entries
+                    const toolCallEntries = chunk.toolCalls.map((toolCall) => ({
+                      type: "tool_call" as const,
+                      content: "Executing...",
+                      timestamp: new Date(),
+                      toolCall: toolCall,
+                    }));
 
-            // Flush updates periodically
-            flushUpdates();
+                    return [...updatedPrev, ...toolCallEntries];
+                  }
+                  break;
+
+                case "tool_result":
+                  if (chunk.toolCall && chunk.toolResult) {
+                    // Update matching tool_call entry with result
+                    return prev.map((entry) => {
+                      if (entry.type === "tool_call" && entry.toolCall?.id === chunk.toolCall.id) {
+                        return {
+                          ...entry,
+                          type: "tool_result",
+                          content: chunk.toolResult.success
+                            ? chunk.toolResult.output || "Success"
+                            : chunk.toolResult.error || "Error occurred",
+                          toolResult: chunk.toolResult,
+                        };
+                      }
+                      return entry;
+                    });
+                  }
+                  break;
+
+                case "done":
+                  // Finalize any streaming entries
+                  return prev.map((entry) =>
+                    entry.isStreaming ? { ...entry, isStreaming: false } : entry
+                  );
+              }
+
+              return prev;
+            });
           }
 
-          // Final flush and cleanup
-          flushUpdates();
-          if (streamingEntry) {
-            setChatHistory((prev) =>
-              prev.map((entry) =>
-                entry.isStreaming ? { ...entry, isStreaming: false } : entry
-              )
-            );
-          }
+          // Final cleanup
+          setChatHistory((prev) =>
+            prev.map((entry) =>
+              entry.isStreaming ? { ...entry, isStreaming: false } : entry
+            )
+          );
           setIsStreaming(false);
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -314,12 +268,12 @@ function ChatInterfaceWithAgent({
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);
 
-  const handleConfirmation = (dontAskAgain?: boolean) => {
+  const handleConfirmation = useCallback((dontAskAgain?: boolean) => {
     confirmationService.confirmOperation(true, dontAskAgain);
     setConfirmationOptions(null);
-  };
+  }, [confirmationService]);
 
-  const handleRejection = (feedback?: string) => {
+  const handleRejection = useCallback((feedback?: string) => {
     confirmationService.rejectOperation(feedback);
     setConfirmationOptions(null);
 
@@ -329,44 +283,12 @@ function ChatInterfaceWithAgent({
     setTokenCount(0);
     setProcessingTime(0);
     processingStartTime.current = 0;
-  };
+  }, [confirmationService]);
 
   return (
     <Box flexDirection="column" paddingX={2}>
       {/* Show logo and tips only when no chat history and no confirmation dialog */}
-      {chatHistory.length === 0 && !confirmationOptions && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Text color="cyan" bold>
-            {`    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
-               dBP   dB'.BP  dBP.d8P                            
-  dBBBB    dBBBBK'  dB'.BP  dBBBBP'          dBP    dBP    dBP  
- dB' BB   dBP  BB  dB'.BP  dBP BB  dBBBBBP  dBP    dBP    dBP   
-dBBBBBB  dBP  dB' dBBBBP  dBP dB'          dBBBBP dBBBBP dBP    `}
-          </Text>
-          <Text color="cyan" bold>
-            Tips for getting started:
-          </Text>
-          <Box marginTop={1} flexDirection="column">
-            <Text color="gray">
-              1. Ask questions, edit files, or run commands.
-            </Text>
-            <Text color="gray">2. Be specific for the best results.</Text>
-            <Text color="gray">
-              3. Create GROK.md files to customize your interactions with Grok.
-            </Text>
-            <Text color="gray">
-              4. Press Shift+Tab to toggle auto-edit mode.
-            </Text>
-            <Text color="gray">
-              5. Run "/init-agent" to set up an .agent docs system for this project.
-            </Text>
-            <Text color="gray">
-              6. Run "/heal" after errors to capture a fix and add a guardrail.
-            </Text>
-            <Text color="gray">7. /help for more information.</Text>
-          </Box>
-        </Box>
-      )}
+      {chatHistory.length === 0 && !confirmationOptions && <Logo />}
 
       <Box flexDirection="column" marginBottom={1}>
         <Text color="gray">

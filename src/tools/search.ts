@@ -1,9 +1,10 @@
-import { spawn, execSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import * as ops from "fs";
+import { SelfCorrectError } from "../types/errors.js";
 
-const pathExists = async (filePath: string): Promise<boolean> => {
+const _pathExists = async (filePath: string): Promise<boolean> => {
   try {
     await ops.promises.access(filePath, ops.constants.F_OK);
     return true;
@@ -43,6 +44,7 @@ export interface UnifiedSearchResult {
 export class SearchTool {
   private confirmationService = ConfirmationService.getInstance();
   private currentDirectory: string = process.cwd();
+  private ripgrepAvailable: boolean | null = null;
 
   /**
    * Unified search method that can search for text content or find files
@@ -119,6 +121,28 @@ export class SearchTool {
   }
 
   /**
+   * Check if ripgrep is available on Windows
+   */
+  private checkRipgrepAvailable(): boolean {
+    if (this.ripgrepAvailable !== null) {
+      return this.ripgrepAvailable;
+    }
+
+    try {
+      // Windows-compatible check: try to run rg --version
+      const result = spawnSync('rg', ['--version'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      this.ripgrepAvailable = result.status === 0;
+    } catch {
+      this.ripgrepAvailable = false;
+    }
+
+    return this.ripgrepAvailable;
+  }
+
+  /**
    * Execute ripgrep command with specified options
    */
   private async executeRipgrep(
@@ -135,16 +159,28 @@ export class SearchTool {
     }
   ): Promise<SearchResult[]> {
     return new Promise((resolve, reject) => {
-      // Check if ripgrep is installed
-      try {
-        execSync('which rg', { stdio: 'ignore' });
-      } catch {
-        reject(new Error('ripgrep is not installed. Please install it to use text search. Visit https://github.com/BurntSushi/ripgrep#installation'));
+      // Check if ripgrep is installed (Windows-compatible)
+      if (!this.checkRipgrepAvailable()) {
+        reject(new SelfCorrectError({
+          message: 'ripgrep (rg) is not installed or not in PATH',
+          originalTool: 'search',
+          suggestedFallbacks: [
+            'Install ripgrep from https://github.com/BurntSushi/ripgrep#installation',
+            'Use advanced_search tool which has built-in JavaScript-based search',
+            'Use code_analysis tool for symbol-based search'
+          ],
+          hint: 'The search tool will automatically fall back to JavaScript-based search if ripgrep is unavailable',
+          metadata: {
+            query,
+            options,
+            platform: process.platform
+          }
+        }));
         return;
       }
 
       // If ripgrep is available, proceed with search
-        const args = [
+      const args = [
         "--json",
         "--with-filename",
         "--line-number",
@@ -214,7 +250,7 @@ export class SearchTool {
       // Add query and search directory
       args.push(query, this.currentDirectory);
 
-      const rg = spawn("rg", args);
+      const rg = spawn("rg", args, { windowsHide: true });
       let output = "";
       let errorOutput = "";
 
@@ -265,7 +301,7 @@ export class SearchTool {
             match: data.submatches[0]?.match?.text || "",
           });
         }
-      } catch (e) {
+      } catch {
         // Skip invalid JSON lines
         continue;
       }
@@ -348,7 +384,7 @@ export class SearchTool {
             await walkDir(fullPath, depth + 1);
           }
         }
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     };
@@ -403,7 +439,7 @@ export class SearchTool {
   private formatUnifiedResults(
     results: UnifiedSearchResult[],
     query: string,
-    searchType: string
+    _searchType: string
   ): string {
     if (results.length === 0) {
       return `No results found for "${query}"`;

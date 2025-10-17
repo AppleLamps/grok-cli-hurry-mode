@@ -131,7 +131,7 @@ export class SubagentFramework {
     }
 
     const startTime = Date.now();
-    
+
     try {
       // Create isolated context for subagent
       const context: SubagentContext = {
@@ -145,7 +145,7 @@ export class SubagentFramework {
 
       // Simulate subagent execution
       const result = await this.executeInIsolatedContext(context, config);
-      
+
       this.setResult(task.id, {
         taskId: task.id,
         type: task.type,
@@ -173,13 +173,13 @@ export class SubagentFramework {
   }
 
   private async executeInIsolatedContext(
-    context: SubagentContext, 
-    config: SubagentConfig
+    context: SubagentContext,
+    _config: SubagentConfig
   ): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    
+
     // This is where we would integrate with the actual AI model
     // For now, we'll simulate the execution based on the subagent type
-    
+
     switch (context.type) {
       case 'docgen':
         return this.simulateDocGenAgent(context);
@@ -204,10 +204,10 @@ export class SubagentFramework {
 
   private async simulateDocGenAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
     const { projectPath, docType } = context.data;
-    
+
     // Simulate document generation
     await this.delay(2000); // Simulate processing time
-    
+
     return {
       output: {
         documentType: docType,
@@ -224,10 +224,10 @@ export class SubagentFramework {
   }
 
   private async simulatePRDAssistantAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { prdPath, prdContent } = context.data;
-    
+    const { prdPath: _prdPath, prdContent: _prdContent } = context.data;
+
     await this.delay(1500);
-    
+
     return {
       output: {
         suggestions: [
@@ -245,10 +245,10 @@ export class SubagentFramework {
   }
 
   private async simulateDeltaAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { fromCommit, toCommit } = context.data;
-    
+    const { fromCommit, toCommit: _toCommit } = context.data;
+
     await this.delay(1000);
-    
+
     return {
       output: {
         filesChanged: ['src/tools/documentation/', 'src/hooks/use-input-handler.ts'],
@@ -262,10 +262,10 @@ export class SubagentFramework {
   }
 
   private async simulateTokenOptimizerAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { currentTokens, targetReduction } = context.data;
-    
+    const { currentTokens, targetReduction: _targetReduction } = context.data;
+
     await this.delay(500);
-    
+
     return {
       output: {
         currentUsage: currentTokens,
@@ -284,12 +284,12 @@ export class SubagentFramework {
 
   private async simulateSummarizerAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
     const { content, compressionTarget } = context.data;
-    
+
     await this.delay(2500);
-    
+
     const originalLength = content.length;
     const targetLength = Math.floor(originalLength * (compressionTarget || 0.3));
-    
+
     return {
       output: {
         originalLength,
@@ -308,10 +308,10 @@ export class SubagentFramework {
   }
 
   private async simulateSentinelAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { errorLogs, recentCommands } = context.data;
-    
+    const { errorLogs: _errorLogs, recentCommands: _recentCommands } = context.data;
+
     await this.delay(800);
-    
+
     return {
       output: {
         errorsDetected: 0,
@@ -325,10 +325,10 @@ export class SubagentFramework {
   }
 
   private async simulateRegressionHunterAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { proposedChanges, knownFailures } = context.data;
-    
+    const { proposedChanges: _proposedChanges, knownFailures: _knownFailures } = context.data;
+
     await this.delay(1200);
-    
+
     return {
       output: {
         riskLevel: 'low',
@@ -342,10 +342,10 @@ export class SubagentFramework {
   }
 
   private async simulateGuardrailAgent(context: SubagentContext): Promise<{ output: any; tokensUsed: number; summary: string }> {
-    const { planDescription, rules } = context.data;
-    
+    const { planDescription: _planDescription, rules: _rules } = context.data;
+
     await this.delay(600);
-    
+
     return {
       output: {
         violationsFound: [],
@@ -395,7 +395,7 @@ export class SubagentFramework {
 
   async waitForResult(taskId: string, timeoutMs: number = 30000): Promise<SubagentResult> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       const result = await this.getResult(taskId);
       if (result) {
@@ -403,7 +403,7 @@ export class SubagentFramework {
       }
       await this.delay(100); // Check every 100ms
     }
-    
+
     throw new Error(`Subagent task ${taskId} timed out after ${timeoutMs}ms`);
   }
 
@@ -423,8 +423,8 @@ export class SubagentFramework {
     totalTokensUsed: number;
   } {
     const results = Array.from(this.results.values());
-    const avgExecTime = results.length > 0 
-      ? results.reduce((sum, r) => sum + r.executionTime, 0) / results.length 
+    const avgExecTime = results.length > 0
+      ? results.reduce((sum, r) => sum + r.executionTime, 0) / results.length
       : 0;
     const totalTokens = results.reduce((sum, r) => sum + r.tokensUsed, 0);
 

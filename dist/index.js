@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import * as fs from 'fs';
 import fs__default, { existsSync } from 'fs';
-import * as path10 from 'path';
-import path10__default from 'path';
+import * as path12 from 'path';
+import path12__default from 'path';
 import * as os from 'os';
-import React3, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import crypto, { createHash } from 'crypto';
+import React3, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { program, Command } from 'commander';
 import * as dotenv from 'dotenv';
@@ -13,23 +14,25 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { EventEmitter } from 'events';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import axios from 'axios';
-import { exec, execSync, spawn } from 'child_process';
+import { exec, spawnSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import { writeFile } from 'fs/promises';
 import { parse } from '@typescript-eslint/typescript-estree';
 import chokidar from 'chokidar';
 import { glob } from 'glob';
 import * as ops9 from 'fs-extra';
+import pLimit from 'p-limit';
 import Fuse from 'fuse.js';
 import { encoding_for_model, get_encoding } from 'tiktoken';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
-import crypto from 'crypto';
 import { marked } from 'marked';
 import TerminalRenderer from 'marked-terminal';
 import chalk from 'chalk';
 
 var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
   get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
 }) : x)(function(x) {
@@ -43,6 +46,15 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 function getSettingsManager() {
   return SettingsManager.getInstance();
 }
@@ -75,12 +87,12 @@ var init_settings_manager = __esm({
     };
     SettingsManager = class _SettingsManager {
       constructor() {
-        this.userSettingsPath = path10.join(
+        this.userSettingsPath = path12.join(
           os.homedir(),
           ".grok",
           "user-settings.json"
         );
-        this.projectSettingsPath = path10.join(
+        this.projectSettingsPath = path12.join(
           process.cwd(),
           ".grok",
           "settings.json"
@@ -99,7 +111,7 @@ var init_settings_manager = __esm({
        * Ensure directory exists for a given file path
        */
       ensureDirectoryExists(filePath) {
-        const dir = path10.dirname(filePath);
+        const dir = path12.dirname(filePath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true, mode: 448 });
         }
@@ -428,6 +440,202 @@ var init_config = __esm({
     PREDEFINED_SERVERS = {};
   }
 });
+
+// src/utils/operation-tracker.ts
+var operation_tracker_exports = {};
+__export(operation_tracker_exports, {
+  OperationTracker: () => OperationTracker
+});
+var OperationTracker;
+var init_operation_tracker = __esm({
+  "src/utils/operation-tracker.ts"() {
+    OperationTracker = class _OperationTracker {
+      constructor() {
+        this.operations = /* @__PURE__ */ new Map();
+        this.fileHashes = /* @__PURE__ */ new Map();
+        this.maxHistoryPerFile = 10;
+      }
+      static getInstance() {
+        if (!_OperationTracker.instance) {
+          _OperationTracker.instance = new _OperationTracker();
+        }
+        return _OperationTracker.instance;
+      }
+      /**
+       * Compute hash of file content
+       */
+      computeHash(content) {
+        return createHash("sha256").update(content, "utf-8").digest("hex");
+      }
+      /**
+       * Get current hash of a file
+       */
+      async getFileHash(filePath) {
+        try {
+          const absolutePath = path12.resolve(filePath);
+          if (!fs.existsSync(absolutePath)) {
+            return null;
+          }
+          const content = await fs.promises.readFile(absolutePath, "utf-8");
+          return this.computeHash(content);
+        } catch {
+          return null;
+        }
+      }
+      /**
+       * Check if an operation would be a duplicate
+       */
+      async checkIdempotency(type, filePath, newContent) {
+        const absolutePath = path12.resolve(filePath);
+        const operations = this.operations.get(absolutePath) || [];
+        if (type === "create") {
+          if (fs.existsSync(absolutePath)) {
+            const lastOp = operations[operations.length - 1];
+            return {
+              isDuplicate: true,
+              reason: "File already exists",
+              previousOperation: lastOp,
+              suggestion: "Use edit operation instead, or check if the file was already created"
+            };
+          }
+        }
+        if (type === "edit" && newContent) {
+          const newHash = this.computeHash(newContent);
+          const currentHash = await this.getFileHash(absolutePath);
+          if (currentHash === newHash) {
+            const lastOp = operations[operations.length - 1];
+            return {
+              isDuplicate: true,
+              reason: "Content is identical to current file",
+              previousOperation: lastOp,
+              suggestion: "File already has the desired content. No changes needed."
+            };
+          }
+          const recentIdenticalEdit = operations.slice(-3).find((op) => op.type === "edit" && op.contentHash === newHash);
+          if (recentIdenticalEdit) {
+            return {
+              isDuplicate: true,
+              reason: "This exact edit was already applied recently",
+              previousOperation: recentIdenticalEdit,
+              suggestion: "The file was already edited to this content. Verify the operation completed successfully."
+            };
+          }
+        }
+        if (type === "delete") {
+          if (!fs.existsSync(absolutePath)) {
+            const lastOp = operations[operations.length - 1];
+            if (lastOp && lastOp.type === "delete") {
+              return {
+                isDuplicate: true,
+                reason: "File was already deleted",
+                previousOperation: lastOp,
+                suggestion: "File no longer exists. It may have been deleted already."
+              };
+            }
+          }
+        }
+        return { isDuplicate: false };
+      }
+      /**
+       * Record an operation
+       */
+      async recordOperation(type, filePath, metadata) {
+        const absolutePath = path12.resolve(filePath);
+        const contentHash = await this.getFileHash(absolutePath);
+        const record = {
+          id: `${type}_${absolutePath}_${Date.now()}`,
+          type,
+          filePath: absolutePath,
+          contentHash: contentHash || void 0,
+          timestamp: Date.now(),
+          metadata
+        };
+        const operations = this.operations.get(absolutePath) || [];
+        operations.push(record);
+        if (operations.length > this.maxHistoryPerFile) {
+          operations.shift();
+        }
+        this.operations.set(absolutePath, operations);
+        if (contentHash) {
+          this.fileHashes.set(absolutePath, contentHash);
+        } else {
+          this.fileHashes.delete(absolutePath);
+        }
+      }
+      /**
+       * Get operation history for a file
+       */
+      getFileHistory(filePath) {
+        const absolutePath = path12.resolve(filePath);
+        return this.operations.get(absolutePath) || [];
+      }
+      /**
+       * Clear history for a file
+       */
+      clearFileHistory(filePath) {
+        const absolutePath = path12.resolve(filePath);
+        this.operations.delete(absolutePath);
+        this.fileHashes.delete(absolutePath);
+      }
+      /**
+       * Clear all history
+       */
+      clearAll() {
+        this.operations.clear();
+        this.fileHashes.clear();
+      }
+      /**
+       * Get statistics
+       */
+      getStatistics() {
+        let totalOperations = 0;
+        const operationsByType = {
+          create: 0,
+          edit: 0,
+          delete: 0,
+          rename: 0,
+          move: 0
+        };
+        for (const operations of this.operations.values()) {
+          totalOperations += operations.length;
+          for (const op of operations) {
+            operationsByType[op.type]++;
+          }
+        }
+        return {
+          totalFiles: this.operations.size,
+          totalOperations,
+          operationsByType
+        };
+      }
+      /**
+       * Detect if we're in a loop (same operations repeating)
+       */
+      detectLoop(windowSize = 5) {
+        const allOperations = [];
+        for (const ops22 of this.operations.values()) {
+          allOperations.push(...ops22.slice(-windowSize));
+        }
+        allOperations.sort((a, b) => a.timestamp - b.timestamp);
+        if (allOperations.length < windowSize * 2) {
+          return { isLoop: false };
+        }
+        const recent = allOperations.slice(-windowSize);
+        const earlier = allOperations.slice(-windowSize * 2, -windowSize);
+        const recentSignature = recent.map((op) => `${op.type}:${op.filePath}:${op.contentHash}`).join("|");
+        const earlierSignature = earlier.map((op) => `${op.type}:${op.filePath}:${op.contentHash}`).join("|");
+        if (recentSignature === earlierSignature) {
+          return {
+            isLoop: true,
+            repeatedOperations: recent,
+            suggestion: "Detected repeated operations. The same edits are being applied multiple times. Consider checking task completion criteria."
+          };
+        }
+        return { isLoop: false };
+      }
+    };
+  }
+});
 var GrokClient = class {
   constructor(apiKey, model, baseURL, options) {
     this.currentModel = "grok-code-fast-1";
@@ -590,10 +798,10 @@ var SSETransport = class extends EventEmitter {
     }
   }
   async connect() {
-    return new Promise((resolve8, reject) => {
+    return new Promise((resolve10, reject) => {
       try {
         this.connected = true;
-        resolve8(new SSEClientTransport(this.config.url));
+        resolve10(new SSEClientTransport(this.config.url));
       } catch (error) {
         reject(error);
       }
@@ -654,10 +862,10 @@ var StreamableHttpTransport = class extends EventEmitter {
     }
   }
   async connect() {
-    return new Promise((resolve8, reject) => {
+    return new Promise((resolve10, reject) => {
       try {
         this.connected = true;
-        resolve8(new StreamableHttpClientTransport(this.config.url, this.config.headers));
+        resolve10(new StreamableHttpClientTransport(this.config.url, this.config.headers));
       } catch (error) {
         reject(error);
       }
@@ -922,51 +1130,18 @@ var BASE_GROK_TOOLS = [
     type: "function",
     function: {
       name: "search",
-      description: "Unified search tool for finding text content or files (similar to Cursor's search)",
+      description: "Search for text in files or find files by name",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Text to search for or file name/path pattern"
+            description: "Text to search for or file name pattern"
           },
           search_type: {
             type: "string",
             enum: ["text", "files", "both"],
-            description: "Type of search: 'text' for content search, 'files' for file names, 'both' for both (default: 'both')"
-          },
-          include_pattern: {
-            type: "string",
-            description: "Glob pattern for files to include (e.g. '*.ts', '*.js')"
-          },
-          exclude_pattern: {
-            type: "string",
-            description: "Glob pattern for files to exclude (e.g. '*.log', 'node_modules')"
-          },
-          case_sensitive: {
-            type: "boolean",
-            description: "Whether search should be case sensitive (default: false)"
-          },
-          whole_word: {
-            type: "boolean",
-            description: "Whether to match whole words only (default: false)"
-          },
-          regex: {
-            type: "boolean",
-            description: "Whether query is a regex pattern (default: false)"
-          },
-          max_results: {
-            type: "number",
-            description: "Maximum number of results to return (default: 50)"
-          },
-          file_types: {
-            type: "array",
-            items: { type: "string" },
-            description: "File types to search (e.g. ['js', 'ts', 'py'])"
-          },
-          include_hidden: {
-            type: "boolean",
-            description: "Whether to include hidden files (default: false)"
+            description: "Type: 'text', 'files', or 'both' (default: 'both')"
           }
         },
         required: ["query"]
@@ -977,37 +1152,13 @@ var BASE_GROK_TOOLS = [
     type: "function",
     function: {
       name: "create_todo_list",
-      description: "Create a new todo list for planning and tracking tasks",
+      description: "Create a todo list for task planning",
       parameters: {
         type: "object",
         properties: {
           todos: {
             type: "array",
-            description: "Array of todo items",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item"
-                },
-                content: {
-                  type: "string",
-                  description: "Description of the todo item"
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item"
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item"
-                }
-              },
-              required: ["id", "content", "status", "priority"]
-            }
+            description: "Array of todo items with id, content, status, priority"
           }
         },
         required: ["todos"]
@@ -1018,37 +1169,13 @@ var BASE_GROK_TOOLS = [
     type: "function",
     function: {
       name: "update_todo_list",
-      description: "Update existing todos in the todo list",
+      description: "Update existing todos",
       parameters: {
         type: "object",
         properties: {
           updates: {
             type: "array",
-            description: "Array of todo updates",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "ID of the todo item to update"
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item"
-                },
-                content: {
-                  type: "string",
-                  description: "New content for the todo item"
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item"
-                }
-              },
-              required: ["id"]
-            }
+            description: "Array of updates with id and new values"
           }
         },
         required: ["updates"]
@@ -1390,11 +1517,16 @@ var MORPH_EDIT_TOOL = {
   }
 };
 function buildGrokTools() {
-  const tools = [...BASE_GROK_TOOLS];
+  const coreTools = BASE_GROK_TOOLS.slice(0, 10);
   if (process.env.MORPH_API_KEY) {
-    tools.splice(3, 0, MORPH_EDIT_TOOL);
+    coreTools.splice(3, 0, MORPH_EDIT_TOOL);
   }
-  return tools;
+  const enableAdvancedTools = process.env.GROK_ENABLE_ADVANCED_TOOLS === "1";
+  if (enableAdvancedTools) {
+    const advancedTools = BASE_GROK_TOOLS.slice(10);
+    return [...coreTools, ...advancedTools];
+  }
+  return coreTools;
 }
 var GROK_TOOLS = buildGrokTools();
 var mcpManager = null;
@@ -1459,6 +1591,14 @@ async function getAllGrokTools() {
 
 // src/agent/grok-agent.ts
 init_config();
+
+// src/utils/debug.ts
+var isDebugEnabled = () => process.env.DEBUG === "1";
+function debugLog(message, ...args) {
+  if (isDebugEnabled()) {
+    console.log(`[DEBUG] ${message}`, ...args);
+  }
+}
 var execAsync = promisify(exec);
 var ConfirmationService = class _ConfirmationService extends EventEmitter {
   constructor() {
@@ -1490,8 +1630,8 @@ var ConfirmationService = class _ConfirmationService extends EventEmitter {
         options.showVSCodeOpen = false;
       }
     }
-    this.pendingConfirmation = new Promise((resolve8) => {
-      this.resolveConfirmation = resolve8;
+    this.pendingConfirmation = new Promise((resolve10) => {
+      this.resolveConfirmation = resolve10;
     });
     setImmediate(() => {
       this.emit("confirmation-requested", options);
@@ -1551,23 +1691,165 @@ var ConfirmationService = class _ConfirmationService extends EventEmitter {
   }
 };
 
+// src/types/errors.ts
+var SelfCorrectError = class _SelfCorrectError extends Error {
+  constructor(options) {
+    super(options.message);
+    this.name = "SelfCorrectError";
+    this.originalTool = options.originalTool;
+    this.suggestedFallbacks = options.suggestedFallbacks;
+    this.hint = options.hint;
+    this.metadata = options.metadata || {};
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, _SelfCorrectError);
+    }
+  }
+  /**
+   * Format error for display to LLM
+   */
+  toDisplayString() {
+    let output = `${this.message}
+
+`;
+    output += `Suggested approaches:
+`;
+    this.suggestedFallbacks.forEach((fallback, idx) => {
+      output += `${idx + 1}. ${fallback}
+`;
+    });
+    if (this.hint) {
+      output += `
+Hint: ${this.hint}`;
+    }
+    return output;
+  }
+  /**
+   * Convert to ToolResult error format
+   */
+  toToolResult() {
+    return {
+      success: false,
+      error: this.toDisplayString(),
+      metadata: {
+        ...this.metadata,
+        originalTool: this.originalTool,
+        suggestedFallbacks: this.suggestedFallbacks,
+        isSelfCorrectError: true
+      }
+    };
+  }
+};
+function extractSelfCorrectError(result) {
+  if (result.success) return null;
+  if (result.metadata?.isSelfCorrectError) {
+    return new SelfCorrectError({
+      message: result.error || "Unknown error",
+      originalTool: result.metadata.originalTool || "unknown",
+      suggestedFallbacks: result.metadata.suggestedFallbacks || [],
+      hint: result.metadata.hint || "",
+      metadata: result.metadata
+    });
+  }
+  if (result.error?.includes("SELF_CORRECT_ATTEMPT:")) {
+    const errorLines = result.error.split("\n");
+    const firstLine = errorLines[0] || result.error;
+    const match = firstLine.match(/SELF_CORRECT_ATTEMPT: (.+)/);
+    const message = match ? match[1] : result.error;
+    return new SelfCorrectError({
+      message,
+      originalTool: result.metadata?.originalTool || "unknown",
+      suggestedFallbacks: result.metadata?.fallbackTools || [],
+      hint: "",
+      metadata: result.metadata || {}
+    });
+  }
+  return null;
+}
+
 // src/tools/bash.ts
 var execAsync2 = promisify(exec);
 var BashTool = class {
   constructor() {
     this.currentDirectory = process.cwd();
     this.confirmationService = ConfirmationService.getInstance();
+    this.isWindows = os.platform() === "win32";
+    this.shell = this.isWindows ? "powershell.exe" : "/bin/bash";
+  }
+  /**
+   * Translate common Unix commands to Windows equivalents
+   */
+  translateCommand(command) {
+    if (!this.isWindows) {
+      return command;
+    }
+    const translations = {
+      "ls": (cmd) => {
+        if (cmd === "ls" || cmd === "ls -la" || cmd === "ls -l") {
+          return "Get-ChildItem | Format-Table -AutoSize";
+        }
+        const match = cmd.match(/^ls\s+(.+)$/);
+        if (match) {
+          return `Get-ChildItem ${match[1]} | Format-Table -AutoSize`;
+        }
+        return cmd;
+      },
+      "grep": (cmd) => {
+        const match = cmd.match(/grep\s+(?:-r\s+)?["']?([^"'\s]+)["']?\s+(.+)/);
+        if (match) {
+          const pattern = match[1];
+          const path28 = match[2];
+          return `Get-ChildItem -Path ${path28} -Recurse -File | Select-String -Pattern "${pattern}"`;
+        }
+        return cmd;
+      },
+      "find": (cmd) => {
+        const match = cmd.match(/find\s+(.+?)\s+-name\s+["']?([^"'\s]+)["']?/);
+        if (match) {
+          const searchPath = match[1];
+          const pattern = match[2];
+          return `Get-ChildItem -Path ${searchPath} -Filter "${pattern}" -Recurse`;
+        }
+        return cmd;
+      },
+      "cat": (cmd) => {
+        const match = cmd.match(/cat\s+(.+)/);
+        if (match) {
+          return `Get-Content ${match[1]}`;
+        }
+        return cmd;
+      },
+      "pwd": () => "Get-Location",
+      "which": (cmd) => {
+        const match = cmd.match(/which\s+(.+)/);
+        if (match) {
+          return `Get-Command ${match[1]} -ErrorAction SilentlyContinue`;
+        }
+        return cmd;
+      }
+    };
+    for (const [unixCmd, translator] of Object.entries(translations)) {
+      if (command.startsWith(unixCmd)) {
+        const translated = translator(command);
+        if (translated !== command) {
+          console.log(`\u{1F504} Translated command: "${command}" -> "${translated}"`);
+        }
+        return translated;
+      }
+    }
+    return command;
   }
   async execute(command, timeout = 6e4) {
     try {
+      const translatedCommand = this.translateCommand(command);
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!sessionFlags.bashCommands && !sessionFlags.allOperations) {
         const confirmationResult = await this.confirmationService.requestConfirmation({
           operation: "Run bash command",
-          filename: command,
+          filename: translatedCommand,
           showVSCodeOpen: false,
-          content: `Command: ${command}
-Working directory: ${this.currentDirectory}`
+          content: `Command: ${translatedCommand}
+Working directory: ${this.currentDirectory}
+Platform: ${this.isWindows ? "Windows" : "Unix"}`
         }, "bash");
         if (!confirmationResult.confirmed) {
           return {
@@ -1592,10 +1874,11 @@ Working directory: ${this.currentDirectory}`
           };
         }
       }
-      const { stdout, stderr } = await execAsync2(command, {
+      const { stdout, stderr } = await execAsync2(translatedCommand, {
         cwd: this.currentDirectory,
         timeout,
-        maxBuffer: 1024 * 1024 * 10
+        maxBuffer: 1024 * 1024 * 10,
+        shell: this.shell
       });
       const output = stdout + (stderr ? `
 STDERR: ${stderr}` : "");
@@ -1604,6 +1887,21 @@ STDERR: ${stderr}` : "");
         output: output.trim() || "Command executed successfully (no output)"
       };
     } catch (error) {
+      if (this.isWindows && error.message.includes("is not recognized")) {
+        const originalCmd = command.split(" ")[0];
+        throw new SelfCorrectError({
+          message: `Command '${originalCmd}' not recognized on Windows`,
+          originalTool: "bash",
+          suggestedFallbacks: [
+            `Use BashTool.listFiles() instead of 'ls'`,
+            `Use BashTool.findFiles() instead of 'find'`,
+            `Use BashTool.grep() instead of 'grep'`,
+            `Use PowerShell commands (Get-ChildItem, Select-String, etc.)`
+          ],
+          hint: `The command '${command}' is a Unix command. On Windows, use the built-in Node.js helpers or PowerShell equivalents.`,
+          metadata: { originalCommand: command, platform: "win32" }
+        });
+      }
       return {
         success: false,
         error: `Command failed: ${error.message}`
@@ -1613,16 +1911,220 @@ STDERR: ${stderr}` : "");
   getCurrentDirectory() {
     return this.currentDirectory;
   }
+  /**
+   * List files in a directory (Windows-compatible using Node APIs)
+   */
   async listFiles(directory = ".") {
-    return this.execute(`ls -la ${directory}`);
+    try {
+      const targetDir = path12.resolve(this.currentDirectory, directory);
+      if (!fs.existsSync(targetDir)) {
+        return {
+          success: false,
+          error: `Directory not found: ${directory}`
+        };
+      }
+      const stats = await fs.promises.stat(targetDir);
+      if (!stats.isDirectory()) {
+        return {
+          success: false,
+          error: `Not a directory: ${directory}`
+        };
+      }
+      const entries = await fs.promises.readdir(targetDir, { withFileTypes: true });
+      let output = `Directory: ${targetDir}
+
+`;
+      output += `${"Type".padEnd(10)} ${"Size".padEnd(12)} ${"Name"}
+`;
+      output += `${"-".repeat(10)} ${"-".repeat(12)} ${"-".repeat(40)}
+`;
+      for (const entry of entries) {
+        const fullPath = path12.join(targetDir, entry.name);
+        let size = "";
+        let type = "";
+        if (entry.isDirectory()) {
+          type = "<DIR>";
+        } else if (entry.isFile()) {
+          type = "FILE";
+          const fileStat = await fs.promises.stat(fullPath);
+          size = this.formatFileSize(fileStat.size);
+        } else if (entry.isSymbolicLink()) {
+          type = "<LINK>";
+        } else {
+          type = "OTHER";
+        }
+        output += `${type.padEnd(10)} ${size.padEnd(12)} ${entry.name}
+`;
+      }
+      output += `
+Total: ${entries.length} items`;
+      return {
+        success: true,
+        output
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to list files: ${error.message}`
+      };
+    }
   }
+  /**
+   * Find files matching a pattern (Windows-compatible using Node APIs)
+   */
   async findFiles(pattern, directory = ".") {
-    return this.execute(`find ${directory} -name "${pattern}" -type f`);
+    try {
+      const targetDir = path12.resolve(this.currentDirectory, directory);
+      if (!fs.existsSync(targetDir)) {
+        return {
+          success: false,
+          error: `Directory not found: ${directory}`
+        };
+      }
+      const matches = [];
+      const searchPattern = pattern.toLowerCase();
+      const walkDir = async (dir, depth = 0) => {
+        if (depth > 20) return;
+        try {
+          const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path12.join(dir, entry.name);
+            const relativePath = path12.relative(targetDir, fullPath);
+            if (entry.isDirectory() && ["node_modules", ".git", "dist", "build"].includes(entry.name)) {
+              continue;
+            }
+            if (entry.isFile()) {
+              const fileName = entry.name.toLowerCase();
+              const patternRegex = new RegExp(
+                "^" + searchPattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
+              );
+              if (patternRegex.test(fileName) || fileName.includes(searchPattern)) {
+                matches.push(relativePath);
+              }
+            } else if (entry.isDirectory()) {
+              await walkDir(fullPath, depth + 1);
+            }
+          }
+        } catch (error) {
+        }
+      };
+      await walkDir(targetDir);
+      if (matches.length === 0) {
+        return {
+          success: true,
+          output: `No files found matching pattern: ${pattern}`
+        };
+      }
+      return {
+        success: true,
+        output: `Found ${matches.length} files:
+${matches.join("\n")}`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to find files: ${error.message}`
+      };
+    }
   }
+  /**
+   * Search for text in files (Windows-compatible using Node APIs)
+   */
   async grep(pattern, files = ".") {
-    return this.execute(`grep -r "${pattern}" ${files}`);
+    try {
+      const targetPath = path12.resolve(this.currentDirectory, files);
+      if (!fs.existsSync(targetPath)) {
+        return {
+          success: false,
+          error: `Path not found: ${files}`
+        };
+      }
+      const matches = [];
+      const searchPattern = new RegExp(pattern, "i");
+      const searchInFile = async (filePath) => {
+        try {
+          const content = await fs.promises.readFile(filePath, "utf-8");
+          const lines = content.split("\n");
+          lines.forEach((line, index) => {
+            if (searchPattern.test(line)) {
+              matches.push({
+                file: path12.relative(targetPath, filePath),
+                line: index + 1,
+                text: line.trim()
+              });
+            }
+          });
+        } catch (error) {
+        }
+      };
+      const walkDir = async (dir, depth = 0) => {
+        if (depth > 20) return;
+        try {
+          const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path12.join(dir, entry.name);
+            if (entry.isDirectory() && ["node_modules", ".git", "dist", "build"].includes(entry.name)) {
+              continue;
+            }
+            if (entry.isFile()) {
+              const ext = path12.extname(entry.name).toLowerCase();
+              const textExtensions = [".ts", ".js", ".json", ".md", ".txt", ".yml", ".yaml", ".xml", ".html", ".css", ".tsx", ".jsx"];
+              if (textExtensions.includes(ext) || ext === "") {
+                await searchInFile(fullPath);
+              }
+            } else if (entry.isDirectory()) {
+              await walkDir(fullPath, depth + 1);
+            }
+          }
+        } catch (error) {
+        }
+      };
+      const stats = await fs.promises.stat(targetPath);
+      if (stats.isFile()) {
+        await searchInFile(targetPath);
+      } else if (stats.isDirectory()) {
+        await walkDir(targetPath);
+      }
+      if (matches.length === 0) {
+        return {
+          success: true,
+          output: `No matches found for pattern: ${pattern}`
+        };
+      }
+      let output = `Found ${matches.length} matches:
+
+`;
+      matches.slice(0, 50).forEach((match) => {
+        output += `${match.file}:${match.line}: ${match.text}
+`;
+      });
+      if (matches.length > 50) {
+        output += `
+... and ${matches.length - 50} more matches`;
+      }
+      return {
+        success: true,
+        output
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to search: ${error.message}`
+      };
+    }
+  }
+  /**
+   * Format file size for display
+   */
+  formatFileSize(bytes) {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
   }
 };
+init_operation_tracker();
 var pathExists = async (filePath) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
@@ -1635,10 +2137,11 @@ var TextEditorTool = class {
   constructor() {
     this.editHistory = [];
     this.confirmationService = ConfirmationService.getInstance();
+    this.operationTracker = OperationTracker.getInstance();
   }
   async view(filePath, viewRange) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (await pathExists(resolvedPath)) {
         const stats = await fs.promises.stat(resolvedPath);
         if (stats.isDirectory()) {
@@ -1692,7 +2195,7 @@ ${numberedLines}${additionalLinesMessage}`
           error: "oldStr cannot be an empty string"
         };
       }
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1700,6 +2203,24 @@ ${numberedLines}${additionalLinesMessage}`
         };
       }
       const content = await fs.promises.readFile(resolvedPath, "utf-8");
+      const potentialNewContent = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
+      const idempotencyCheck = await this.operationTracker.checkIdempotency(
+        "edit",
+        resolvedPath,
+        potentialNewContent
+      );
+      if (idempotencyCheck.isDuplicate) {
+        return {
+          success: true,
+          output: `\u26A0\uFE0F Skipped duplicate operation: ${idempotencyCheck.reason}
+${idempotencyCheck.suggestion || ""}`,
+          metadata: {
+            skipped: true,
+            reason: idempotencyCheck.reason,
+            previousOperation: idempotencyCheck.previousOperation
+          }
+        };
+      }
       if (!content.includes(oldStr)) {
         if (oldStr.includes("\n")) {
           const fuzzyResult = this.findFuzzyMatch(content, oldStr);
@@ -1742,8 +2263,13 @@ ${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
           };
         }
       }
-      const newContent = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
+      const newContent = potentialNewContent;
       await writeFile(resolvedPath, newContent, "utf-8");
+      await this.operationTracker.recordOperation("edit", resolvedPath, {
+        oldStr: oldStr.substring(0, 100),
+        newStr: newStr.substring(0, 100),
+        replaceAll
+      });
       this.editHistory.push({
         command: "str_replace",
         path: filePath,
@@ -1766,7 +2292,24 @@ ${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
   }
   async create(filePath, content) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
+      const idempotencyCheck = await this.operationTracker.checkIdempotency(
+        "create",
+        resolvedPath,
+        content
+      );
+      if (idempotencyCheck.isDuplicate) {
+        return {
+          success: true,
+          output: `\u26A0\uFE0F Skipped duplicate operation: ${idempotencyCheck.reason}
+${idempotencyCheck.suggestion || ""}`,
+          metadata: {
+            skipped: true,
+            reason: idempotencyCheck.reason,
+            previousOperation: idempotencyCheck.previousOperation
+          }
+        };
+      }
       if (await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1799,9 +2342,13 @@ ${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
           };
         }
       }
-      const dir = path10.dirname(resolvedPath);
+      const dir = path12.dirname(resolvedPath);
       await fs.promises.mkdir(dir, { recursive: true });
       await writeFile(resolvedPath, content, "utf-8");
+      await this.operationTracker.recordOperation("create", resolvedPath, {
+        contentLength: content.length,
+        lineCount: content.split("\n").length
+      });
       this.editHistory.push({
         command: "create",
         path: filePath,
@@ -1823,7 +2370,7 @@ ${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
   }
   async replaceLines(filePath, startLine, endLine, newContent) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -1891,7 +2438,7 @@ ${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
   }
   async insert(filePath, insertLine, content) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists(resolvedPath)) {
         return {
           success: false,
@@ -2262,7 +2809,7 @@ var MorphEditorTool = class {
    */
   async editFile(targetFile, instructions, codeEdit) {
     try {
-      const resolvedPath = path10.resolve(targetFile);
+      const resolvedPath = path12.resolve(targetFile);
       if (!await pathExists2(resolvedPath)) {
         return {
           success: false,
@@ -2470,7 +3017,7 @@ ${codeEdit}`
   }
   async view(filePath, viewRange) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (await pathExists2(resolvedPath)) {
         const stats = await fs.promises.stat(resolvedPath);
         if (stats.isDirectory()) {
@@ -2722,6 +3269,7 @@ var SearchTool = class {
   constructor() {
     this.confirmationService = ConfirmationService.getInstance();
     this.currentDirectory = process.cwd();
+    this.ripgrepAvailable = null;
   }
   /**
    * Unified search method that can search for text content or find files
@@ -2776,14 +3324,44 @@ var SearchTool = class {
     }
   }
   /**
+   * Check if ripgrep is available on Windows
+   */
+  checkRipgrepAvailable() {
+    if (this.ripgrepAvailable !== null) {
+      return this.ripgrepAvailable;
+    }
+    try {
+      const result = spawnSync("rg", ["--version"], {
+        stdio: "ignore",
+        windowsHide: true
+      });
+      this.ripgrepAvailable = result.status === 0;
+    } catch {
+      this.ripgrepAvailable = false;
+    }
+    return this.ripgrepAvailable;
+  }
+  /**
    * Execute ripgrep command with specified options
    */
   async executeRipgrep(query, options) {
-    return new Promise((resolve8, reject) => {
-      try {
-        execSync("which rg", { stdio: "ignore" });
-      } catch {
-        reject(new Error("ripgrep is not installed. Please install it to use text search. Visit https://github.com/BurntSushi/ripgrep#installation"));
+    return new Promise((resolve10, reject) => {
+      if (!this.checkRipgrepAvailable()) {
+        reject(new SelfCorrectError({
+          message: "ripgrep (rg) is not installed or not in PATH",
+          originalTool: "search",
+          suggestedFallbacks: [
+            "Install ripgrep from https://github.com/BurntSushi/ripgrep#installation",
+            "Use advanced_search tool which has built-in JavaScript-based search",
+            "Use code_analysis tool for symbol-based search"
+          ],
+          hint: "The search tool will automatically fall back to JavaScript-based search if ripgrep is unavailable",
+          metadata: {
+            query,
+            options,
+            platform: process.platform
+          }
+        }));
         return;
       }
       const args = [
@@ -2835,7 +3413,7 @@ var SearchTool = class {
         "!*.log"
       );
       args.push(query, this.currentDirectory);
-      const rg = spawn("rg", args);
+      const rg = spawn("rg", args, { windowsHide: true });
       let output = "";
       let errorOutput = "";
       rg.stdout.on("data", (data) => {
@@ -2847,7 +3425,7 @@ var SearchTool = class {
       rg.on("close", (code) => {
         if (code === 0 || code === 1) {
           const results = this.parseRipgrepOutput(output);
-          resolve8(results);
+          resolve10(results);
         } else {
           reject(new Error(`Ripgrep failed with code ${code}: ${errorOutput}`));
         }
@@ -2876,7 +3454,7 @@ var SearchTool = class {
             match: data.submatches[0]?.match?.text || ""
           });
         }
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -2895,8 +3473,8 @@ var SearchTool = class {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (files.length >= maxResults) break;
-          const fullPath = path10.join(dir, entry.name);
-          const relativePath = path10.relative(this.currentDirectory, fullPath);
+          const fullPath = path12.join(dir, entry.name);
+          const relativePath = path12.relative(this.currentDirectory, fullPath);
           if (!options.includeHidden && entry.name.startsWith(".")) {
             continue;
           }
@@ -2932,7 +3510,7 @@ var SearchTool = class {
             await walkDir(fullPath, depth + 1);
           }
         }
-      } catch (error) {
+      } catch {
       }
     };
     await walkDir(this.currentDirectory);
@@ -2961,7 +3539,7 @@ var SearchTool = class {
   /**
    * Format unified search results for display
    */
-  formatUnifiedResults(results, query, searchType) {
+  formatUnifiedResults(results, query, _searchType) {
     if (results.length === 0) {
       return `No results found for "${query}"`;
     }
@@ -3014,7 +3592,7 @@ try {
   TypeScript = __require("tree-sitter-typescript");
   Python = __require("tree-sitter-python");
 } catch {
-  console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
+  debugLog("Tree-sitter modules not available, using TypeScript-only parsing");
 }
 var CodeIntelligenceEngine = class {
   constructor(rootPath, options) {
@@ -3054,7 +3632,7 @@ var CodeIntelligenceEngine = class {
     // Debouncing for file changes
     this.pendingUpdates = /* @__PURE__ */ new Map();
     this.updateDebounceMs = 300;
-    this.rootPath = path10__default.resolve(rootPath);
+    this.rootPath = path12__default.resolve(rootPath);
     if (options?.filePatterns) {
       this.filePatterns = options.filePatterns;
     }
@@ -3069,7 +3647,7 @@ var CodeIntelligenceEngine = class {
   // ==================== Initialization ====================
   initializeParsers() {
     if (!Parser || !JavaScript || !TypeScript || !Python) {
-      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
+      debugLog("Tree-sitter parsers not available, using TypeScript-only parsing");
       return;
     }
     try {
@@ -3090,19 +3668,19 @@ var CodeIntelligenceEngine = class {
       this.parsers.set("python", pyParser);
       this.parsers.set("py", pyParser);
     } catch (error) {
-      console.warn("Failed to initialize some parsers:", error);
+      debugLog("Failed to initialize some parsers:", error);
     }
   }
   async initialize() {
     if (this.isInitialized) {
-      console.warn("CodeIntelligenceEngine already initialized");
+      debugLog("CodeIntelligenceEngine already initialized");
       return;
     }
-    console.log(`\u{1F9E0} Initializing Code Intelligence Engine for: ${this.rootPath}`);
+    debugLog(`\u{1F9E0} Initializing Code Intelligence Engine for: ${this.rootPath}`);
     const startTime = Date.now();
     try {
       const sourceFiles = await this.scanSourceFiles();
-      console.log(`   Found ${sourceFiles.length} source files`);
+      debugLog(`   Found ${sourceFiles.length} source files`);
       this.isIndexing = true;
       await this.indexFiles(sourceFiles);
       this.isIndexing = false;
@@ -3111,8 +3689,8 @@ var CodeIntelligenceEngine = class {
       this.updateStatistics();
       this.isInitialized = true;
       const duration = Date.now() - startTime;
-      console.log(`\u2705 Engine initialized in ${duration}ms`);
-      console.log(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
+      debugLog(`\u2705 Engine initialized in ${duration}ms`);
+      debugLog(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
     } catch (error) {
       console.error("Failed to initialize Code Intelligence Engine:", error);
       throw error;
@@ -3140,7 +3718,7 @@ var CodeIntelligenceEngine = class {
       await Promise.all(batch.map((file) => this.indexFile(file)));
       indexed += batch.length;
       if (indexed % 50 === 0 || indexed === total) {
-        console.log(`   Indexing progress: ${indexed}/${total}`);
+        debugLog(`   Indexing progress: ${indexed}/${total}`);
       }
     }
   }
@@ -3161,7 +3739,7 @@ var CodeIntelligenceEngine = class {
         this.fileAsts.set(filePath, parseResult.tree);
       }
       this.fileMetadata.set(filePath, {
-        filePath: path10__default.relative(this.rootPath, filePath),
+        filePath: path12__default.relative(this.rootPath, filePath),
         absolutePath: filePath,
         language,
         lastModified: stats.mtimeMs,
@@ -3177,7 +3755,7 @@ var CodeIntelligenceEngine = class {
         this.parseErrors.delete(filePath);
       }
     } catch (error) {
-      console.warn(`Failed to index ${filePath}:`, error);
+      debugLog(`Failed to index ${filePath}:`, error);
       this.parseErrors.set(filePath, [{
         message: error instanceof Error ? error.message : String(error),
         line: 0,
@@ -3642,8 +4220,8 @@ var CodeIntelligenceEngine = class {
     }
   }
   resolveImportPath(importPath, currentFile) {
-    const currentDir = path10__default.dirname(currentFile);
-    const basePath = path10__default.resolve(currentDir, importPath);
+    const currentDir = path12__default.dirname(currentFile);
+    const basePath = path12__default.resolve(currentDir, importPath);
     const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
     for (const ext of extensions) {
       const fullPath = basePath + ext;
@@ -3652,7 +4230,7 @@ var CodeIntelligenceEngine = class {
       }
     }
     for (const ext of extensions) {
-      const indexPath = path10__default.join(basePath, `index${ext}`);
+      const indexPath = path12__default.join(basePath, `index${ext}`);
       if (fs.existsSync(indexPath)) {
         return indexPath;
       }
@@ -3720,7 +4298,7 @@ var CodeIntelligenceEngine = class {
   }
   // ==================== File Watching ====================
   startFileWatcher() {
-    console.log("   Starting file watcher...");
+    debugLog("   Starting file watcher...");
     this.watcher = chokidar.watch(this.filePatterns, {
       cwd: this.rootPath,
       ignored: this.excludePatterns,
@@ -3733,13 +4311,13 @@ var CodeIntelligenceEngine = class {
       }
     });
     this.watcher.on("add", (relPath) => {
-      const absPath = path10__default.resolve(this.rootPath, relPath);
+      const absPath = path12__default.resolve(this.rootPath, relPath);
       this.scheduleFileUpdate(absPath, "add");
     }).on("change", (relPath) => {
-      const absPath = path10__default.resolve(this.rootPath, relPath);
+      const absPath = path12__default.resolve(this.rootPath, relPath);
       this.scheduleFileUpdate(absPath, "change");
     }).on("unlink", (relPath) => {
-      const absPath = path10__default.resolve(this.rootPath, relPath);
+      const absPath = path12__default.resolve(this.rootPath, relPath);
       this.handleFileDelete(absPath);
     }).on("error", (err) => {
       console.error("File watcher error:", err);
@@ -3775,7 +4353,7 @@ var CodeIntelligenceEngine = class {
         }
       }
       this.updateStatistics();
-      console.log(`   Updated: ${path10__default.relative(this.rootPath, filePath)}`);
+      debugLog(`   Updated: ${path12__default.relative(this.rootPath, filePath)}`);
     } catch (error) {
       console.error(`Failed to update ${filePath}:`, error);
     }
@@ -3808,7 +4386,7 @@ var CodeIntelligenceEngine = class {
       }
     }
     this.updateStatistics();
-    console.log(`   Deleted: ${path10__default.relative(this.rootPath, filePath)}`);
+    debugLog(`   Deleted: ${path12__default.relative(this.rootPath, filePath)}`);
   }
   rebuildSymbolCrossReference(symbolName, refs) {
     const definition = refs.find(
@@ -3903,23 +4481,23 @@ var CodeIntelligenceEngine = class {
       }
     }
     const visited = /* @__PURE__ */ new Set();
-    const path25 = [];
+    const path28 = [];
     const dfs = (file) => {
-      if (path25.includes(file)) {
-        const cycleStart = path25.indexOf(file);
-        circularDependencies.push(path25.slice(cycleStart).concat([file]));
+      if (path28.includes(file)) {
+        const cycleStart = path28.indexOf(file);
+        circularDependencies.push(path28.slice(cycleStart).concat([file]));
         return;
       }
       if (visited.has(file)) return;
       visited.add(file);
-      path25.push(file);
+      path28.push(file);
       const deps = this.getDependencies(file);
       for (const dep of deps) {
         if (affectedFiles.has(dep)) {
           dfs(dep);
         }
       }
-      path25.pop();
+      path28.pop();
     };
     dfs(filePath);
     if (affectedFiles.size > 10) {
@@ -3953,7 +4531,7 @@ var CodeIntelligenceEngine = class {
   }
   // ==================== Utility Methods ====================
   detectLanguage(filePath) {
-    const ext = path10__default.extname(filePath).slice(1).toLowerCase();
+    const ext = path12__default.extname(filePath).slice(1).toLowerCase();
     switch (ext) {
       case "js":
       case "mjs":
@@ -4018,7 +4596,7 @@ var CodeIntelligenceEngine = class {
   }
   // ==================== Cleanup ====================
   dispose() {
-    console.log("\u{1F9E0} Disposing Code Intelligence Engine");
+    debugLog("\u{1F9E0} Disposing Code Intelligence Engine");
     if (this.watcher) {
       this.watcher.close();
       this.watcher = null;
@@ -4035,7 +4613,7 @@ var CodeIntelligenceEngine = class {
     this.crossReferences.clear();
     this.parseErrors.clear();
     this.isInitialized = false;
-    console.log("   Engine disposed");
+    debugLog("   Engine disposed");
   }
 };
 var pathExists3 = async (filePath) => {
@@ -4147,7 +4725,7 @@ var DependencyAnalyzerTool = class {
         const imports = [];
         const exports = [];
         const node = {
-          filePath: path10__default.relative(rootPath, filePath),
+          filePath: path12__default.relative(rootPath, filePath),
           absolutePath: filePath,
           imports,
           exports,
@@ -4184,7 +4762,7 @@ var DependencyAnalyzerTool = class {
   }
   async resolveImportPaths(imports, currentFile, rootPath, includeExternals) {
     const dependencies = [];
-    const currentDir = path10__default.dirname(currentFile);
+    const currentDir = path12__default.dirname(currentFile);
     for (const importInfo of imports) {
       let resolvedPath = null;
       if (importInfo.source.startsWith(".")) {
@@ -4204,7 +4782,7 @@ var DependencyAnalyzerTool = class {
     return dependencies;
   }
   async resolveRelativeImport(importPath, currentDir) {
-    const basePath = path10__default.resolve(currentDir, importPath);
+    const basePath = path12__default.resolve(currentDir, importPath);
     const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
     for (const ext of extensions) {
       const fullPath = basePath + ext;
@@ -4213,7 +4791,7 @@ var DependencyAnalyzerTool = class {
       }
     }
     for (const ext of extensions) {
-      const indexPath = path10__default.join(basePath, `index${ext}`);
+      const indexPath = path12__default.join(basePath, `index${ext}`);
       if (await pathExists3(indexPath)) {
         return indexPath;
       }
@@ -4221,17 +4799,17 @@ var DependencyAnalyzerTool = class {
     return null;
   }
   async resolveAbsoluteImport(importPath, rootPath) {
-    const fullPath = path10__default.join(rootPath, importPath.slice(1));
-    return await this.resolveRelativeImport(".", path10__default.dirname(fullPath));
+    const fullPath = path12__default.join(rootPath, importPath.slice(1));
+    return await this.resolveRelativeImport(".", path12__default.dirname(fullPath));
   }
   detectCircularDependencies(graph) {
     const circularDeps = [];
     const visited = /* @__PURE__ */ new Set();
     const visiting = /* @__PURE__ */ new Set();
-    const dfs = (filePath, path25) => {
+    const dfs = (filePath, path28) => {
       if (visiting.has(filePath)) {
-        const cycleStart = path25.indexOf(filePath);
-        const cycle = path25.slice(cycleStart).concat([filePath]);
+        const cycleStart = path28.indexOf(filePath);
+        const cycle = path28.slice(cycleStart).concat([filePath]);
         circularDeps.push({
           cycle: cycle.map((fp) => graph.nodes.get(fp)?.filePath || fp),
           severity: cycle.length <= 2 ? "error" : "warning",
@@ -4247,7 +4825,7 @@ var DependencyAnalyzerTool = class {
       if (node) {
         for (const dependency of node.dependencies) {
           if (graph.nodes.has(dependency)) {
-            dfs(dependency, [...path25, filePath]);
+            dfs(dependency, [...path28, filePath]);
           }
         }
       }
@@ -4303,7 +4881,7 @@ var DependencyAnalyzerTool = class {
     ];
     const entryPoints = [];
     for (const [filePath, node] of graph.nodes) {
-      const fileName = path10__default.basename(filePath);
+      const fileName = path12__default.basename(filePath);
       if (node.dependents.length === 0 || commonEntryPatterns.some((pattern) => pattern.test(fileName))) {
         entryPoints.push(filePath);
       }
@@ -4391,14 +4969,14 @@ var DependencyAnalyzerTool = class {
     const externalDependencies = [];
     const internalDependencies = [];
     for (const dep of deps) {
-      if (dep.startsWith(".") || dep.startsWith("/") || path10__default.isAbsolute(dep)) {
-        internalDependencies.push(path10__default.relative(rootPath, dep));
+      if (dep.startsWith(".") || dep.startsWith("/") || path12__default.isAbsolute(dep)) {
+        internalDependencies.push(path12__default.relative(rootPath, dep));
       } else {
         externalDependencies.push(dep);
       }
     }
     return {
-      filePath: path10__default.relative(rootPath, filePath),
+      filePath: path12__default.relative(rootPath, filePath),
       externalDependencies,
       internalDependencies,
       circularImports: [],
@@ -5213,11 +5791,11 @@ var TaskPlanner = class {
   /**
    * Generate function name from endpoint path and HTTP method
    */
-  generateFunctionName(path25, method) {
-    const parts = path25.split("/").filter(Boolean);
+  generateFunctionName(path28, method) {
+    const parts = path28.split("/").filter(Boolean);
     const resource = parts[parts.length - 1]?.replace(/[^a-zA-Z0-9]/g, "") || "resource";
     const action = method.toLowerCase();
-    if (action === "get" && path25.includes(":")) {
+    if (action === "get" && path28.includes(":")) {
       return `get${this.capitalize(resource)}ById`;
     } else if (action === "get") {
       return `get${this.capitalize(resource)}s`;
@@ -5233,11 +5811,11 @@ var TaskPlanner = class {
   /**
    * Generate service method name from endpoint path and HTTP method
    */
-  generateServiceMethodName(path25, method) {
-    const parts = path25.split("/").filter(Boolean);
+  generateServiceMethodName(path28, method) {
+    const parts = path28.split("/").filter(Boolean);
     const resource = parts[parts.length - 1]?.replace(/[^a-zA-Z0-9]/g, "") || "resource";
     const action = method.toLowerCase();
-    if (action === "get" && path25.includes(":")) {
+    if (action === "get" && path28.includes(":")) {
       return `find${this.capitalize(resource)}ById`;
     } else if (action === "get") {
       return `findAll${this.capitalize(resource)}s`;
@@ -5472,7 +6050,7 @@ var OperationHistoryTool = class {
       ...options
     };
     const homeDir = process.env.HOME || process.env.USERPROFILE || "";
-    this.historyFile = path10.join(homeDir, ".grok", "operation-history.json");
+    this.historyFile = path12.join(homeDir, ".grok", "operation-history.json");
     this.loadHistory();
     if (this.options.autoCleanup) {
       this.cleanupOldEntries();
@@ -5763,7 +6341,7 @@ This action cannot be undone.`
     const snapshots = [];
     for (const filePath of files) {
       try {
-        const resolvedPath = path10.resolve(filePath);
+        const resolvedPath = path12.resolve(filePath);
         const exists = await pathExists4(resolvedPath);
         const snapshot = {
           filePath: resolvedPath,
@@ -5781,7 +6359,7 @@ This action cannot be undone.`
         snapshots.push(snapshot);
       } catch (error) {
         snapshots.push({
-          filePath: path10.resolve(filePath),
+          filePath: path12.resolve(filePath),
           existed: false
         });
       }
@@ -5800,7 +6378,7 @@ This action cannot be undone.`
     } catch {
       return false;
     }
-    const ext = path10.extname(filePath).toLowerCase();
+    const ext = path12.extname(filePath).toLowerCase();
     const binaryExtensions = [
       ".exe",
       ".dll",
@@ -5886,7 +6464,7 @@ This action cannot be undone.`
       try {
         const currentExists = await pathExists4(snapshot.filePath);
         if (snapshot.existed && snapshot.content !== void 0) {
-          await ops9.ensureDir(path10.dirname(snapshot.filePath));
+          await ops9.ensureDir(path12.dirname(snapshot.filePath));
           await ops9.promises.writeFile(snapshot.filePath, snapshot.content, "utf-8");
           if (snapshot.permissions) {
             await ops9.promises.chmod(snapshot.filePath, parseInt(snapshot.permissions, 8));
@@ -6058,7 +6636,7 @@ ${errors.join("\n")}`;
    */
   async saveHistory() {
     try {
-      await ops9.ensureDir(path10.dirname(this.historyFile));
+      await ops9.ensureDir(path12.dirname(this.historyFile));
       const data = {
         entries: this.history,
         currentPosition: this.currentPosition,
@@ -6723,6 +7301,76 @@ var TaskPlannerTool = class {
     return this.orchestrator;
   }
 };
+var ConcurrencyPool = class _ConcurrencyPool {
+  constructor() {
+    const cpuCount = os.cpus().length;
+    this.readLimit = pLimit(Math.min(cpuCount * 2, 8));
+    this.writeLimit = pLimit(2);
+    this.cpuLimit = pLimit(Math.max(cpuCount - 1, 1));
+  }
+  static getInstance() {
+    if (!_ConcurrencyPool.instance) {
+      _ConcurrencyPool.instance = new _ConcurrencyPool();
+    }
+    return _ConcurrencyPool.instance;
+  }
+  /**
+   * Execute read operations in parallel with concurrency limit
+   */
+  async executeReads(operations) {
+    return Promise.all(operations.map((op) => this.readLimit(op)));
+  }
+  /**
+   * Execute write operations with concurrency limit
+   */
+  async executeWrites(operations) {
+    return Promise.all(operations.map((op) => this.writeLimit(op)));
+  }
+  /**
+   * Execute CPU-intensive operations with concurrency limit
+   */
+  async executeCPU(operations) {
+    return Promise.all(operations.map((op) => this.cpuLimit(op)));
+  }
+  /**
+   * Execute a single read operation
+   */
+  async read(operation) {
+    return this.readLimit(operation);
+  }
+  /**
+   * Execute a single write operation
+   */
+  async write(operation) {
+    return this.writeLimit(operation);
+  }
+  /**
+   * Execute a single CPU operation
+   */
+  async cpu(operation) {
+    return this.cpuLimit(operation);
+  }
+  /**
+   * Get current concurrency limits
+   */
+  getLimits() {
+    return {
+      read: this.readLimit.activeCount + "/" + this.readLimit.pendingCount,
+      write: this.writeLimit.activeCount + "/" + this.writeLimit.pendingCount,
+      cpu: this.cpuLimit.activeCount + "/" + this.cpuLimit.pendingCount
+    };
+  }
+  /**
+   * Clear all pending operations (for cleanup)
+   */
+  clearAll() {
+    this.readLimit.clearQueue();
+    this.writeLimit.clearQueue();
+    this.cpuLimit.clearQueue();
+  }
+};
+
+// src/tools/advanced/multi-file-editor.ts
 var pathExists5 = async (filePath) => {
   try {
     await ops9.promises.access(filePath, ops9.constants.F_OK);
@@ -6734,6 +7382,7 @@ var pathExists5 = async (filePath) => {
 var MultiFileEditorTool = class {
   constructor() {
     this.confirmationService = ConfirmationService.getInstance();
+    this.concurrency = ConcurrencyPool.getInstance();
     this.transactions = /* @__PURE__ */ new Map();
     this.currentTransactionId = null;
   }
@@ -6913,11 +7562,20 @@ var MultiFileEditorTool = class {
         }
       }
       const rollbackData = [];
+      try {
+        const rollbackPromises = transaction.operations.map(
+          (op) => this.concurrency.read(() => this.createRollbackInfo(op))
+        );
+        rollbackData.push(...await Promise.all(rollbackPromises));
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to prepare transaction rollback data: ${error.message}`
+        };
+      }
       const results = [];
       for (const [index, op] of transaction.operations.entries()) {
         try {
-          const rollbackInfo = await this.createRollbackInfo(op);
-          rollbackData.push(rollbackInfo);
           const result = await this.executeOperation(op);
           if (!result.success) {
             await this.rollbackOperations(rollbackData.slice(0, index));
@@ -7056,7 +7714,7 @@ ${results.join("\n")}`
    */
   async validateOperation(operation) {
     try {
-      const resolvedPath = path10.resolve(operation.filePath);
+      const resolvedPath = path12.resolve(operation.filePath);
       switch (operation.type) {
         case "create":
           if (await pathExists5(resolvedPath)) {
@@ -7087,7 +7745,7 @@ ${results.join("\n")}`
           if (!operation.newFilePath) {
             return { valid: false, error: "Destination path required" };
           }
-          const newResolvedPath = path10.resolve(operation.newFilePath);
+          const newResolvedPath = path12.resolve(operation.newFilePath);
           if (await pathExists5(newResolvedPath)) {
             return { valid: false, error: "Destination already exists" };
           }
@@ -7102,7 +7760,7 @@ ${results.join("\n")}`
    * Create rollback information for an operation
    */
   async createRollbackInfo(operation) {
-    const resolvedPath = path10.resolve(operation.filePath);
+    const resolvedPath = path12.resolve(operation.filePath);
     switch (operation.type) {
       case "create":
         return {
@@ -7140,10 +7798,10 @@ ${results.join("\n")}`
    * Execute a single operation
    */
   async executeOperation(operation) {
-    const resolvedPath = path10.resolve(operation.filePath);
+    const resolvedPath = path12.resolve(operation.filePath);
     switch (operation.type) {
       case "create":
-        const dir = path10.dirname(resolvedPath);
+        const dir = path12.dirname(resolvedPath);
         await ops9.promises.mkdir(dir, { recursive: true });
         await writeFile(resolvedPath, operation.content, "utf-8");
         return { success: true, output: `Created ${operation.filePath}` };
@@ -7159,8 +7817,8 @@ ${results.join("\n")}`
         return { success: true, output: `Deleted ${operation.filePath}` };
       case "rename":
       case "move":
-        const newResolvedPath = path10.resolve(operation.newFilePath);
-        const newDir = path10.dirname(newResolvedPath);
+        const newResolvedPath = path12.resolve(operation.newFilePath);
+        const newDir = path12.dirname(newResolvedPath);
         await ops9.promises.mkdir(newDir, { recursive: true });
         await ops9.move(resolvedPath, newResolvedPath);
         return { success: true, output: `${operation.type === "rename" ? "Renamed" : "Moved"} ${operation.filePath} to ${operation.newFilePath}` };
@@ -7204,26 +7862,26 @@ ${results.join("\n")}`
       const rollback = rollbackData[i];
       switch (rollback.type) {
         case "delete_created":
-          const createdPath = path10.resolve(rollback.filePath);
+          const createdPath = path12.resolve(rollback.filePath);
           if (await pathExists5(createdPath)) {
             await ops9.promises.rm(createdPath);
           }
           break;
         case "restore_content":
-          const editedPath = path10.resolve(rollback.filePath);
+          const editedPath = path12.resolve(rollback.filePath);
           await writeFile(editedPath, rollback.originalContent, "utf-8");
           break;
         case "restore_deleted":
-          const deletedPath = path10.resolve(rollback.filePath);
-          const deletedDir = path10.dirname(deletedPath);
+          const deletedPath = path12.resolve(rollback.filePath);
+          const deletedDir = path12.dirname(deletedPath);
           await ops9.promises.mkdir(deletedDir, { recursive: true });
           await writeFile(deletedPath, rollback.content, "utf-8");
           break;
         case "restore_move":
-          const movedNewPath = path10.resolve(rollback.newPath);
-          const movedOldPath = path10.resolve(rollback.oldPath);
+          const movedNewPath = path12.resolve(rollback.newPath);
+          const movedOldPath = path12.resolve(rollback.oldPath);
           if (await pathExists5(movedNewPath)) {
-            const oldDir = path10.dirname(movedOldPath);
+            const oldDir = path12.dirname(movedOldPath);
             await ops9.promises.mkdir(oldDir, { recursive: true });
             await ops9.move(movedNewPath, movedOldPath);
           }
@@ -7282,7 +7940,7 @@ var AdvancedSearchTool = class {
    */
   async search(searchPath, options) {
     try {
-      const resolvedPath = path10.resolve(searchPath);
+      const resolvedPath = path12.resolve(searchPath);
       if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
@@ -7325,7 +7983,7 @@ var AdvancedSearchTool = class {
    */
   async searchAndReplace(searchPath, options) {
     try {
-      const resolvedPath = path10.resolve(searchPath);
+      const resolvedPath = path12.resolve(searchPath);
       if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
@@ -7397,7 +8055,7 @@ var AdvancedSearchTool = class {
    */
   async findFiles(searchPath, pattern, options = {}) {
     try {
-      const resolvedPath = path10.resolve(searchPath);
+      const resolvedPath = path12.resolve(searchPath);
       if (!await pathExists6(resolvedPath)) {
         return {
           success: false,
@@ -7411,8 +8069,8 @@ var AdvancedSearchTool = class {
         if (options.maxResults && matchingFiles.length >= options.maxResults) {
           break;
         }
-        const fileName = path10.basename(filePath);
-        const relativePath = path10.relative(resolvedPath, filePath);
+        const fileName = path12.basename(filePath);
+        const relativePath = path12.relative(resolvedPath, filePath);
         let matches = false;
         if (regex) {
           matches = regex.test(fileName) || regex.test(relativePath);
@@ -7480,7 +8138,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
       }
     }
     return {
-      filePath: path10.relative(process.cwd(), filePath),
+      filePath: path12.relative(process.cwd(), filePath),
       matches,
       totalMatches: matches.length
     };
@@ -7504,7 +8162,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
         }
       } catch (error) {
         return {
-          filePath: path10.relative(process.cwd(), filePath),
+          filePath: path12.relative(process.cwd(), filePath),
           replacements: 0,
           success: false,
           error: `Invalid regex pattern: ${options.pattern}`
@@ -7514,21 +8172,21 @@ ${matchingFiles.join("\n")}` : "No matching files found"
       const replacementCount = matches ? matches.length : 0;
       if (replacementCount === 0) {
         return {
-          filePath: path10.relative(process.cwd(), filePath),
+          filePath: path12.relative(process.cwd(), filePath),
           replacements: 0,
           success: true
         };
       }
       const newContent = content.replace(pattern, options.replacement);
       return {
-        filePath: path10.relative(process.cwd(), filePath),
+        filePath: path12.relative(process.cwd(), filePath),
         replacements: replacementCount,
         preview: newContent,
         success: true
       };
     } catch (error) {
       return {
-        filePath: path10.relative(process.cwd(), filePath),
+        filePath: path12.relative(process.cwd(), filePath),
         replacements: 0,
         success: false,
         error: error.message
@@ -7543,7 +8201,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
     const walk = async (currentPath) => {
       const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path10.join(currentPath, entry.name);
+        const fullPath = path12.join(currentPath, entry.name);
         if (entry.isDirectory()) {
           if (this.shouldSkipDirectory(entry.name)) {
             continue;
@@ -7583,8 +8241,8 @@ ${matchingFiles.join("\n")}` : "No matching files found"
    * Check if file should be included in search
    */
   shouldIncludeFile(filePath, options) {
-    const fileName = path10.basename(filePath);
-    const ext = path10.extname(fileName);
+    const fileName = path12.basename(filePath);
+    const ext = path12.extname(fileName);
     const skipExtensions = [
       ".exe",
       ".dll",
@@ -7642,7 +8300,7 @@ ${matchingFiles.join("\n")}` : "No matching files found"
   matchesGlob(filePath, pattern) {
     const regexPattern = pattern.replace(/\./g, "\\.").replace(/\*/g, ".*").replace(/\?/g, ".");
     const regex = new RegExp(`^${regexPattern}$`, "i");
-    return regex.test(path10.basename(filePath)) || regex.test(filePath);
+    return regex.test(path12.basename(filePath)) || regex.test(filePath);
   }
   /**
    * Format search results for display
@@ -7719,7 +8377,7 @@ var FileTreeOperationsTool = class {
    */
   async generateTree(rootPath, options = {}) {
     try {
-      const resolvedPath = path10.resolve(rootPath);
+      const resolvedPath = path12.resolve(rootPath);
       if (!await pathExists7(resolvedPath)) {
         return {
           success: false,
@@ -7799,8 +8457,8 @@ ${results.join("\n")}`
    */
   async copyStructure(sourcePath, destinationPath, options = {}) {
     try {
-      const resolvedSource = path10.resolve(sourcePath);
-      const resolvedDest = path10.resolve(destinationPath);
+      const resolvedSource = path12.resolve(sourcePath);
+      const resolvedDest = path12.resolve(destinationPath);
       if (!await pathExists7(resolvedSource)) {
         return {
           success: false,
@@ -7849,7 +8507,7 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
    */
   async organizeFiles(sourcePath, organizationType, destinationBase) {
     try {
-      const resolvedSource = path10.resolve(sourcePath);
+      const resolvedSource = path12.resolve(sourcePath);
       if (!await pathExists7(resolvedSource)) {
         return {
           success: false,
@@ -7858,7 +8516,7 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
       }
       const files = await this.getFilesRecursively(resolvedSource);
       const organization = await this.categorizeFiles(files, organizationType);
-      const destBase = destinationBase ? path10.resolve(destinationBase) : resolvedSource;
+      const destBase = destinationBase ? path12.resolve(destinationBase) : resolvedSource;
       let preview = `Organization plan (${organizationType}):
 `;
       for (const [category, fileList] of Object.entries(organization)) {
@@ -7866,7 +8524,7 @@ Overwrite: ${options.overwrite ? "Yes" : "No"}`
 ${category}/
 `;
         fileList.slice(0, 5).forEach((file) => {
-          preview += `  - ${path10.basename(file)}
+          preview += `  - ${path12.basename(file)}
 `;
         });
         if (fileList.length > 5) {
@@ -7894,11 +8552,11 @@ ${category}/
       }
       let movedFiles = 0;
       for (const [category, fileList] of Object.entries(organization)) {
-        const categoryDir = path10.join(destBase, category);
+        const categoryDir = path12.join(destBase, category);
         await ops9.promises.mkdir(categoryDir, { recursive: true });
         for (const filePath of fileList) {
-          const fileName = path10.basename(filePath);
-          const destPath = path10.join(categoryDir, fileName);
+          const fileName = path12.basename(filePath);
+          const destPath = path12.join(categoryDir, fileName);
           await ops9.move(filePath, destPath);
           movedFiles++;
         }
@@ -7919,7 +8577,7 @@ ${category}/
    */
   async cleanupEmptyDirectories(rootPath) {
     try {
-      const resolvedPath = path10.resolve(rootPath);
+      const resolvedPath = path12.resolve(rootPath);
       if (!await pathExists7(resolvedPath)) {
         return {
           success: false,
@@ -7936,7 +8594,7 @@ ${category}/
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
         const preview = `Empty directories to remove:
-${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
+${emptyDirs.map((dir) => `- ${path12.relative(rootPath, dir)}`).join("\n")}`;
         const confirmationResult = await this.confirmationService.requestConfirmation(
           {
             operation: `Remove ${emptyDirs.length} empty directories`,
@@ -7973,9 +8631,9 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
    */
   async buildTreeStructure(dirPath, options, currentDepth) {
     const stats = await ops9.promises.stat(dirPath);
-    const name = path10.basename(dirPath);
+    const name = path12.basename(dirPath);
     const node = {
-      name: name || path10.basename(dirPath),
+      name: name || path12.basename(dirPath),
       path: dirPath,
       type: stats.isDirectory() ? "directory" : "file",
       size: stats.size,
@@ -7989,7 +8647,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
           if (!options.includeHidden && entry.name.startsWith(".")) {
             continue;
           }
-          const fullPath = path10.join(dirPath, entry.name);
+          const fullPath = path12.join(dirPath, entry.name);
           if (!this.passesFilters(fullPath, entry, options)) {
             continue;
           }
@@ -8032,7 +8690,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
    */
   passesFilters(fullPath, entry, options) {
     const name = entry.name;
-    const ext = path10.extname(name).toLowerCase();
+    const ext = path12.extname(name).toLowerCase();
     if (options.excludePatterns) {
       for (const pattern of options.excludePatterns) {
         if (this.matchesPattern(name, pattern)) {
@@ -8083,7 +8741,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
    */
   async validateBulkOperation(operation) {
     try {
-      const sourcePath = path10.resolve(operation.source);
+      const sourcePath = path12.resolve(operation.source);
       switch (operation.type) {
         case "copy":
         case "move":
@@ -8130,14 +8788,14 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
    * Execute a single bulk operation
    */
   async executeBulkOperation(operation) {
-    const sourcePath = path10.resolve(operation.source);
+    const sourcePath = path12.resolve(operation.source);
     switch (operation.type) {
       case "copy":
-        const copyDest = path10.resolve(operation.destination);
+        const copyDest = path12.resolve(operation.destination);
         await ops9.copy(sourcePath, copyDest);
         return `Copied ${operation.source} to ${operation.destination}`;
       case "move":
-        const moveDest = path10.resolve(operation.destination);
+        const moveDest = path12.resolve(operation.destination);
         await ops9.move(sourcePath, moveDest);
         return `Moved ${operation.source} to ${operation.destination}`;
       case "delete":
@@ -8150,7 +8808,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
         await ops9.promises.chmod(sourcePath, operation.mode);
         return `Changed permissions of ${operation.source} to ${operation.mode}`;
       case "rename":
-        const renameDest = path10.resolve(operation.destination);
+        const renameDest = path12.resolve(operation.destination);
         await ops9.move(sourcePath, renameDest);
         return `Renamed ${operation.source} to ${operation.destination}`;
       default:
@@ -8185,8 +8843,8 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
       await ops9.promises.mkdir(destination, { recursive: true });
       const entries = await ops9.promises.readdir(source);
       for (const entry of entries) {
-        const srcPath = path10.join(source, entry);
-        const destPath = path10.join(destination, entry);
+        const srcPath = path12.join(source, entry);
+        const destPath = path12.join(destination, entry);
         await this.copyStructureRecursive(srcPath, destPath, options);
       }
     } else if (options.includeFiles) {
@@ -8201,7 +8859,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
     const walk = async (currentPath) => {
       const entries = await ops9.promises.readdir(currentPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path10.join(currentPath, entry.name);
+        const fullPath = path12.join(currentPath, entry.name);
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isFile()) {
@@ -8221,7 +8879,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
       let category;
       switch (organizationType) {
         case "type":
-          const ext = path10.extname(filePath).toLowerCase();
+          const ext = path12.extname(filePath).toLowerCase();
           category = ext || "no-extension";
           break;
         case "size":
@@ -8261,7 +8919,7 @@ ${emptyDirs.map((dir) => `- ${path10.relative(rootPath, dir)}`).join("\n")}`;
         }
         let hasNonEmptyChildren = false;
         for (const entry of entries) {
-          const fullPath = path10.join(currentPath, entry);
+          const fullPath = path12.join(currentPath, entry);
           const stats = await ops9.promises.stat(fullPath);
           if (stats.isDirectory()) {
             const isEmpty = await checkDirectory(fullPath);
@@ -8302,7 +8960,7 @@ var CodeAwareEditorTool = class {
    */
   async analyzeCode(filePath) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
@@ -8329,7 +8987,7 @@ var CodeAwareEditorTool = class {
    */
   async refactor(filePath, operation) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
@@ -8379,7 +9037,7 @@ var CodeAwareEditorTool = class {
    */
   async smartInsert(filePath, code, location, target) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
@@ -8433,7 +9091,7 @@ var CodeAwareEditorTool = class {
    */
   async formatCode(filePath, options = {}) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
@@ -8485,7 +9143,7 @@ var CodeAwareEditorTool = class {
    */
   async addMissingImports(filePath, symbols) {
     try {
-      const resolvedPath = path10.resolve(filePath);
+      const resolvedPath = path12.resolve(filePath);
       if (!await pathExists8(resolvedPath)) {
         return {
           success: false,
@@ -8549,7 +9207,7 @@ ${importsToAdd.join("\n")}`;
    * Detect programming language from file extension
    */
   detectLanguage(filePath) {
-    const ext = path10.extname(filePath).toLowerCase();
+    const ext = path12.extname(filePath).toLowerCase();
     const languageMap = {
       ".js": "javascript",
       ".jsx": "javascript",
@@ -9665,7 +10323,7 @@ var CodeContextTool = class {
       codeMetrics = await this.calculateCodeMetrics(filePath, contextualSymbols);
     }
     return {
-      filePath: path10__default.relative(rootPath, filePath),
+      filePath: path12__default.relative(rootPath, filePath),
       symbols: contextualSymbols,
       dependencies,
       relationships,
@@ -9770,7 +10428,7 @@ var CodeContextTool = class {
     if (name.includes("controller") || name.includes("handler")) {
       tags.push("controller");
     }
-    const fileName = path10__default.basename(filePath);
+    const fileName = path12__default.basename(filePath);
     if (fileName.includes("test")) {
       tags.push("test");
     }
@@ -9842,7 +10500,7 @@ var CodeContextTool = class {
             target: relatedSymbol.name,
             strength: 0.8,
             description: `${symbol.name} uses ${relatedSymbol.name}`,
-            evidence: [`Same file: ${path10__default.basename(filePath)}`]
+            evidence: [`Same file: ${path12__default.basename(filePath)}`]
           });
         }
       }
@@ -9851,7 +10509,7 @@ var CodeContextTool = class {
       if (dep.type === "internal") {
         relationships.push({
           type: "dependency",
-          source: path10__default.basename(filePath),
+          source: path12__default.basename(filePath),
           target: dep.source,
           strength: 0.9,
           description: `File depends on ${dep.source}`,
@@ -9862,7 +10520,7 @@ var CodeContextTool = class {
     return relationships;
   }
   async analyzeSemanticContext(filePath, symbols, dependencies) {
-    const fileName = path10__default.basename(filePath);
+    const fileName = path12__default.basename(filePath);
     const content = await fs.promises.readFile(filePath, "utf-8");
     const purpose = this.inferPurpose(fileName, symbols, content);
     const domain = this.extractDomain(filePath, symbols, dependencies);
@@ -9897,7 +10555,7 @@ var CodeContextTool = class {
   }
   extractDomain(filePath, _symbols, dependencies) {
     const domains = [];
-    const pathParts = filePath.split(path10__default.sep);
+    const pathParts = filePath.split(path12__default.sep);
     for (const part of pathParts) {
       if (["auth", "user", "authentication"].includes(part.toLowerCase())) {
         domains.push("authentication");
@@ -10067,7 +10725,7 @@ var CodeContextTool = class {
       } catch {
       }
       return {
-        filePath: path10__default.relative(rootPath, ref.filePath),
+        filePath: path12__default.relative(rootPath, ref.filePath),
         absolutePath: ref.filePath,
         lineNumber: symbol.startPosition.row + 1,
         // Convert to 1-based
@@ -10113,7 +10771,7 @@ var CodeContextTool = class {
         } catch {
         }
         definition = {
-          filePath: path10__default.relative(rootPath, defRef.filePath),
+          filePath: path12__default.relative(rootPath, defRef.filePath),
           absolutePath: defRef.filePath,
           lineNumber: symbol.startPosition.row + 1,
           columnNumber: symbol.startPosition.column + 1,
@@ -10123,7 +10781,7 @@ var CodeContextTool = class {
         };
         if (includeDefinition) {
           usages.push({
-            filePath: path10__default.relative(rootPath, defRef.filePath),
+            filePath: path12__default.relative(rootPath, defRef.filePath),
             absolutePath: defRef.filePath,
             lineNumber: symbol.startPosition.row + 1,
             columnNumber: symbol.startPosition.column + 1,
@@ -10141,7 +10799,7 @@ var CodeContextTool = class {
         } catch {
         }
         usages.push({
-          filePath: path10__default.relative(rootPath, ref.file),
+          filePath: path12__default.relative(rootPath, ref.file),
           absolutePath: ref.file,
           lineNumber: ref.line + 1,
           // Convert to 1-based
@@ -10293,7 +10951,7 @@ var RefactoringAssistantTool = class {
     if (!this.isValidIdentifier(newName)) {
       throw new Error(`Invalid identifier: ${newName}`);
     }
-    const searchPath = scope === "file" && filePath ? path10__default.dirname(filePath) : process.cwd();
+    const searchPath = scope === "file" && filePath ? path12__default.dirname(filePath) : process.cwd();
     const searchResult = await this.symbolSearch.execute({
       query: symbolName,
       searchPath,
@@ -10521,7 +11179,7 @@ External references: ${Array.from(analysis.externalReferences).join(", ")}`;
     const functionBody = this.extractFunctionBody(functionLines.join("\n"));
     const usageSearch = await this.symbolSearch.execute({
       query: symbolName,
-      searchPath: path10__default.dirname(filePath),
+      searchPath: path12__default.dirname(filePath),
       includeUsages: true,
       fuzzyMatch: false
     });
@@ -10712,7 +11370,7 @@ External references: ${Array.from(analysis.externalReferences).join(", ")}`;
     );
     return {
       type: operationType,
-      description: `Move ${symbol.type} '${symbolName}' from ${path10__default.basename(sourceFile)} to ${path10__default.basename(targetFile)}`,
+      description: `Move ${symbol.type} '${symbolName}' from ${path12__default.basename(sourceFile)} to ${path12__default.basename(targetFile)}`,
       files: fileChanges,
       preview,
       safety
@@ -11098,9 +11756,9 @@ ${body}
     try {
       const content = await fs.promises.readFile(dependentFile, "utf-8");
       const lines = content.split("\n");
-      const dependentDir = path10__default.dirname(dependentFile);
-      const oldRelativePath = path10__default.relative(dependentDir, oldSourceFile).replace(/\\/g, "/");
-      const newRelativePath = path10__default.relative(dependentDir, newSourceFile).replace(/\\/g, "/");
+      const dependentDir = path12__default.dirname(dependentFile);
+      const oldRelativePath = path12__default.relative(dependentDir, oldSourceFile).replace(/\\/g, "/");
+      const newRelativePath = path12__default.relative(dependentDir, newSourceFile).replace(/\\/g, "/");
       const oldImportPath = oldRelativePath.startsWith(".") ? oldRelativePath : "./" + oldRelativePath;
       const newImportPath = newRelativePath.startsWith(".") ? newRelativePath : "./" + newRelativePath;
       const oldImportPathNoExt = oldImportPath.replace(/\.(ts|tsx|js|jsx)$/, "");
@@ -11138,8 +11796,8 @@ ${body}
     }
   }
   generateMovePreview(symbolName, sourceFile, targetFile, affectedFilesCount, operationType) {
-    const sourceName = path10__default.basename(sourceFile);
-    const targetName = path10__default.basename(targetFile);
+    const sourceName = path12__default.basename(sourceFile);
+    const targetName = path12__default.basename(targetFile);
     let preview = `--- Move ${operationType === "move_class" ? "Class" : "Function"} ---
 `;
     preview += `Symbol: ${symbolName}
@@ -11285,6 +11943,207 @@ ${body}
     };
   }
 };
+var MetricsCollector = class _MetricsCollector {
+  constructor() {
+    this.metrics = [];
+    this.activeOperations = /* @__PURE__ */ new Map();
+    this.logFile = null;
+    this.verbose = false;
+    const tempDir = os.tmpdir();
+    const logDir = path12.join(tempDir, "grok-cli-logs");
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      this.logFile = path12.join(logDir, `grok-metrics-${timestamp}.jsonl`);
+    } catch (error) {
+      console.warn("Failed to initialize metrics log file:", error);
+    }
+  }
+  static getInstance() {
+    if (!_MetricsCollector.instance) {
+      _MetricsCollector.instance = new _MetricsCollector();
+    }
+    return _MetricsCollector.instance;
+  }
+  /**
+   * Enable verbose logging
+   */
+  setVerbose(verbose) {
+    this.verbose = verbose;
+  }
+  /**
+   * Start tracking an operation
+   */
+  startOperation(toolName, metadata) {
+    const operationId = `${toolName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const metric = {
+      toolName,
+      operationId,
+      startTime: Date.now(),
+      success: false,
+      retryCount: 0,
+      metadata
+    };
+    this.activeOperations.set(operationId, metric);
+    if (this.verbose) {
+      console.log(`[METRICS] Started ${toolName} (${operationId})`);
+    }
+    return operationId;
+  }
+  /**
+   * End tracking an operation
+   */
+  endOperation(operationId, success, error, fallbackUsed) {
+    const metric = this.activeOperations.get(operationId);
+    if (!metric) {
+      console.warn(`[METRICS] Unknown operation ID: ${operationId}`);
+      return;
+    }
+    metric.endTime = Date.now();
+    metric.latencyMs = metric.endTime - metric.startTime;
+    metric.success = success;
+    metric.error = error;
+    metric.fallbackUsed = fallbackUsed;
+    this.activeOperations.delete(operationId);
+    this.metrics.push(metric);
+    this.writeToLog(metric);
+    if (this.verbose) {
+      const status = success ? "\u2713" : "\u2717";
+      console.log(
+        `[METRICS] ${status} ${metric.toolName} completed in ${metric.latencyMs}ms (${operationId})`
+      );
+      if (error) {
+        console.log(`[METRICS]   Error: ${error.substring(0, 100)}`);
+      }
+      if (fallbackUsed) {
+        console.log(`[METRICS]   Fallback: ${fallbackUsed}`);
+      }
+    }
+  }
+  /**
+   * Increment retry count for an operation
+   */
+  incrementRetry(operationId) {
+    const metric = this.activeOperations.get(operationId);
+    if (metric) {
+      metric.retryCount++;
+      if (this.verbose) {
+        console.log(`[METRICS] Retry #${metric.retryCount} for ${metric.toolName} (${operationId})`);
+      }
+    }
+  }
+  /**
+   * Get aggregated metrics
+   */
+  getAggregatedMetrics() {
+    const toolStats = {};
+    let totalRetries = 0;
+    let fallbackCount = 0;
+    for (const metric of this.metrics) {
+      if (!toolStats[metric.toolName]) {
+        toolStats[metric.toolName] = {
+          count: 0,
+          successCount: 0,
+          totalLatency: 0,
+          retries: 0
+        };
+      }
+      const stats = toolStats[metric.toolName];
+      stats.count++;
+      if (metric.success) stats.successCount++;
+      stats.totalLatency += metric.latencyMs || 0;
+      stats.retries += metric.retryCount;
+      totalRetries += metric.retryCount;
+      if (metric.fallbackUsed) {
+        fallbackCount++;
+      }
+    }
+    const toolBreakdown = {};
+    for (const [toolName, stats] of Object.entries(toolStats)) {
+      toolBreakdown[toolName] = {
+        count: stats.count,
+        successRate: stats.count > 0 ? stats.successCount / stats.count * 100 : 0,
+        avgLatency: stats.count > 0 ? stats.totalLatency / stats.count : 0,
+        retries: stats.retries
+      };
+    }
+    const successCount = this.metrics.filter((m) => m.success).length;
+    const totalLatency = this.metrics.reduce((sum, m) => sum + (m.latencyMs || 0), 0);
+    return {
+      totalOperations: this.metrics.length,
+      successCount,
+      failureCount: this.metrics.length - successCount,
+      totalRetries,
+      fallbackCount,
+      averageLatencyMs: this.metrics.length > 0 ? totalLatency / this.metrics.length : 0,
+      toolBreakdown
+    };
+  }
+  /**
+   * Get recent metrics
+   */
+  getRecentMetrics(count = 10) {
+    return this.metrics.slice(-count);
+  }
+  /**
+   * Clear all metrics
+   */
+  clear() {
+    this.metrics = [];
+    this.activeOperations.clear();
+  }
+  /**
+   * Write metric to log file
+   */
+  writeToLog(metric) {
+    if (!this.logFile) return;
+    try {
+      const logEntry = JSON.stringify({
+        ...metric,
+        timestamp: new Date(metric.startTime).toISOString()
+      }) + "\n";
+      fs.appendFileSync(this.logFile, logEntry, "utf-8");
+    } catch {
+    }
+  }
+  /**
+   * Get log file path
+   */
+  getLogFilePath() {
+    return this.logFile;
+  }
+  /**
+   * Print summary to console
+   */
+  printSummary() {
+    const agg = this.getAggregatedMetrics();
+    console.log("\n=== Grok CLI Metrics Summary ===");
+    console.log(`Total Operations: ${agg.totalOperations}`);
+    console.log(`Success Rate: ${agg.totalOperations > 0 ? (agg.successCount / agg.totalOperations * 100).toFixed(1) : 0}%`);
+    console.log(`Average Latency: ${agg.averageLatencyMs.toFixed(0)}ms`);
+    console.log(`Total Retries: ${agg.totalRetries}`);
+    console.log(`Fallbacks Used: ${agg.fallbackCount}`);
+    if (Object.keys(agg.toolBreakdown).length > 0) {
+      console.log("\nTool Breakdown:");
+      for (const [tool, stats] of Object.entries(agg.toolBreakdown)) {
+        console.log(`  ${tool}:`);
+        console.log(`    Count: ${stats.count}`);
+        console.log(`    Success Rate: ${stats.successRate.toFixed(1)}%`);
+        console.log(`    Avg Latency: ${stats.avgLatency.toFixed(0)}ms`);
+        if (stats.retries > 0) {
+          console.log(`    Retries: ${stats.retries}`);
+        }
+      }
+    }
+    if (this.logFile) {
+      console.log(`
+Detailed logs: ${this.logFile}`);
+    }
+    console.log("================================\n");
+  }
+};
 var TokenCounter = class {
   constructor(model = "gpt-4") {
     try {
@@ -11350,7 +12209,7 @@ function createTokenCounter(model) {
 }
 function loadCustomInstructions(workingDirectory = process.cwd()) {
   try {
-    const instructionsPath = path10.join(workingDirectory, ".grok", "GROK.md");
+    const instructionsPath = path12.join(workingDirectory, ".grok", "GROK.md");
     if (!fs.existsSync(instructionsPath)) {
       return null;
     }
@@ -11382,6 +12241,10 @@ var GrokAgent = class extends EventEmitter {
     // Correction attempt tracking for LLM re-engagement
     this.correctionAttempts = /* @__PURE__ */ new Map();
     this.maxCorrectionAttempts = 3;
+    // Loop detection
+    this.operationTracker = (init_operation_tracker(), __toCommonJS(operation_tracker_exports)).OperationTracker.getInstance();
+    this.consecutiveIdenticalRequests = /* @__PURE__ */ new Map();
+    this.maxIdenticalRequests = 2;
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
@@ -11414,6 +12277,7 @@ var GrokAgent = class extends EventEmitter {
     this.codeContext = new CodeContextTool(this.intelligenceEngine);
     this.refactoringAssistant = new RefactoringAssistantTool(this.intelligenceEngine);
     this.tokenCounter = createTokenCounter(modelToUse);
+    this.metrics = MetricsCollector.getInstance();
     this.taskOrchestrator = new TaskOrchestrator(process.cwd(), {
       maxSteps: 50,
       maxDuration: 3e5,
@@ -11548,7 +12412,7 @@ Current working directory: ${process.cwd()}`
           await initializeMCPServers();
         }
       } catch (error) {
-        console.warn("MCP initialization failed:", error);
+        debugLog("MCP initialization failed:", error);
       } finally {
         this.mcpInitialized = true;
       }
@@ -11731,6 +12595,45 @@ Current working directory: ${process.cwd()}`
   }
   async *processUserMessageStream(message) {
     this.abortController = new AbortController();
+    const requestHash = this.hashRequest(message);
+    const identicalCount = this.consecutiveIdenticalRequests.get(requestHash) || 0;
+    if (identicalCount >= this.maxIdenticalRequests) {
+      yield {
+        type: "content",
+        content: `
+
+\u26A0\uFE0F **Loop Detected**: This request has been repeated ${identicalCount + 1} times.
+
+The same operation appears to be executing repeatedly. This usually means:
+1. The task is already complete
+2. The desired changes have already been applied
+3. There's a misunderstanding about what needs to be done
+
+**Suggestion**: Please verify the current state and provide a different request if changes are still needed.`
+      };
+      this.consecutiveIdenticalRequests.delete(requestHash);
+      return;
+    }
+    const loopCheck = this.operationTracker.detectLoop(5);
+    if (loopCheck.isLoop) {
+      yield {
+        type: "content",
+        content: `
+
+\u26A0\uFE0F **Operation Loop Detected**: ${loopCheck.suggestion}
+
+The same file operations are being repeated. This indicates the task may already be complete.
+
+**Recent operations**:
+${loopCheck.repeatedOperations?.map(
+          (op) => `- ${op.type} ${op.filePath.split("/").pop()} at ${new Date(op.timestamp).toLocaleTimeString()}`
+        ).join("\n")}`
+      };
+      this.operationTracker.clearAll();
+      this.consecutiveIdenticalRequests.delete(requestHash);
+      return;
+    }
+    this.consecutiveIdenticalRequests.set(requestHash, identicalCount + 1);
     const userEntry = {
       type: "user",
       content: message,
@@ -11796,7 +12699,7 @@ Current working directory: ${process.cwd()}`
             };
           }
         } catch (error) {
-          console.warn("Plan generation/execution failed, continuing with standard loop:", error);
+          debugLog("Plan generation/execution failed, continuing with standard loop:", error);
           yield {
             type: "content",
             content: `\u26A0\uFE0F Plan generation failed: ${error.message}
@@ -11819,7 +12722,7 @@ Proceeding with standard approach...
         const timeSinceLastRequest = now - this.lastRequestTime;
         if (timeSinceLastRequest < this.minRequestInterval) {
           const delay = this.minRequestInterval - timeSinceLastRequest;
-          await new Promise((resolve8) => setTimeout(resolve8, delay));
+          await new Promise((resolve10) => setTimeout(resolve10, delay));
         }
         this.lastRequestTime = Date.now();
         const tools = await getAllGrokTools();
@@ -11904,7 +12807,8 @@ Proceeding with standard approach...
               }
               const result = await this.executeTool(toolCall);
               let correctionInfo = null;
-              if (!result.success && result.error?.includes("SELF_CORRECT_ATTEMPT")) {
+              const selfCorrectError = extractSelfCorrectError(result);
+              if (selfCorrectError) {
                 const correctionResult = this.handleSelfCorrectAttempt(result, toolCall, message);
                 if (correctionResult.shouldRetry && correctionResult.fallbackRequest) {
                   this.messages.push({
@@ -11994,6 +12898,7 @@ Please try again with the suggested approach.`
           content: "\n\nMaximum tool execution rounds reached. Stopping to prevent infinite loops."
         };
       }
+      this.consecutiveIdenticalRequests.delete(requestHash);
       yield { type: "done" };
     } catch (error) {
       if (this.abortController?.signal.aborted) {
@@ -12020,15 +12925,20 @@ Please try again with the suggested approach.`
     }
   }
   async executeTool(toolCall) {
+    const operationId = this.metrics.startOperation(toolCall.function.name, {
+      toolCallId: toolCall.id,
+      args: toolCall.function.arguments
+    });
     try {
       const args = JSON.parse(toolCall.function.arguments);
+      let result;
       switch (toolCall.function.name) {
         case "view_file":
           try {
             const range = args.start_line && args.end_line ? [args.start_line, args.end_line] : void 0;
-            const result = await this.textEditor.view(args.path, range);
-            if (!result.success && result.error?.includes("not found")) {
-              return {
+            const viewResult = await this.textEditor.view(args.path, range);
+            if (!viewResult.success && viewResult.error?.includes("not found")) {
+              result = {
                 success: false,
                 error: `SELF_CORRECT_ATTEMPT: File not found: ${args.path}. Please verify the file path is correct. Try one of these:
 1. Use 'search' to find the file in the project
@@ -12037,16 +12947,17 @@ Please try again with the suggested approach.`
 4. Use 'bash' with 'find' or 'ls' to locate the file`,
                 metadata: {
                   originalTool: "view_file",
-                  originalError: result.error,
+                  originalError: viewResult.error,
                   suggestedApproach: "search_for_file",
                   fallbackTools: ["search", "bash"]
                 }
               };
+            } else {
+              result = viewResult;
             }
-            return result;
           } catch (error) {
-            console.warn(`view_file tool failed: ${error.message}`);
-            return {
+            debugLog(`view_file tool failed: ${error.message}`);
+            result = {
               success: false,
               error: `SELF_CORRECT_ATTEMPT: Failed to view file: ${error.message}. Please verify the file exists and is accessible.`,
               metadata: {
@@ -12057,10 +12968,11 @@ Please try again with the suggested approach.`
               }
             };
           }
+          break;
         case "create_file":
           try {
-            const result = await this.textEditor.create(args.path, args.content);
-            if (!result.success && result.error?.includes("already exists")) {
+            const result2 = await this.textEditor.create(args.path, args.content);
+            if (!result2.success && result2.error?.includes("already exists")) {
               return {
                 success: false,
                 error: `SELF_CORRECT_ATTEMPT: File already exists: ${args.path}. Please try one of these approaches:
@@ -12070,15 +12982,15 @@ Please try again with the suggested approach.`
 4. Delete the existing file first if you want to replace it`,
                 metadata: {
                   originalTool: "create_file",
-                  originalError: result.error,
+                  originalError: result2.error,
                   suggestedApproach: "view_then_edit",
                   fallbackTools: ["view_file", "str_replace_editor"]
                 }
               };
             }
-            return result;
+            return result2;
           } catch (error) {
-            console.warn(`create_file tool failed: ${error.message}`);
+            debugLog(`create_file tool failed: ${error.message}`);
             return {
               success: false,
               error: `SELF_CORRECT_ATTEMPT: Failed to create file: ${error.message}. Please verify the directory exists and you have write permissions.`,
@@ -12092,13 +13004,13 @@ Please try again with the suggested approach.`
           }
         case "str_replace_editor":
           try {
-            const result = await this.textEditor.strReplace(
+            const result2 = await this.textEditor.strReplace(
               args.path,
               args.old_str,
               args.new_str,
               args.replace_all
             );
-            if (!result.success && result.error?.includes("String not found")) {
+            if (!result2.success && result2.error?.includes("String not found")) {
               return {
                 success: false,
                 error: `SELF_CORRECT_ATTEMPT: The exact string was not found in the file. This often happens due to whitespace differences or formatting. Please try one of these approaches:
@@ -12108,15 +13020,15 @@ Please try again with the suggested approach.`
 4. Break the edit into smaller, more specific single-line changes`,
                 metadata: {
                   originalTool: "str_replace_editor",
-                  originalError: result.error,
+                  originalError: result2.error,
                   suggestedApproach: "view_file_then_retry",
                   fallbackTools: ["view_file", "multi_file_edit", "code_analysis"]
                 }
               };
             }
-            return result;
+            return result2;
           } catch (error) {
-            console.warn(`str_replace_editor tool failed: ${error.message}`);
+            debugLog(`str_replace_editor tool failed: ${error.message}`);
             return {
               success: false,
               error: `SELF_CORRECT_ATTEMPT: File operation failed: ${error.message}. Please use 'view_file' to check the current state and try again with the exact content.`,
@@ -12160,7 +13072,7 @@ Please try again with the suggested approach.`
               includeHidden: args.include_hidden
             });
           } catch (error) {
-            console.warn(`search tool failed, falling back to bash: ${error.message}`);
+            debugLog(`search tool failed, falling back to bash: ${error.message}`);
             let command = `grep -r "${args.query}" .`;
             if (args.include_pattern) {
               command += ` --include="${args.include_pattern}"`;
@@ -12254,7 +13166,7 @@ Please try again with the suggested approach.`
           try {
             return await this.refactoringAssistant.execute(args);
           } catch (error) {
-            console.warn(`refactoring_assistant failed: ${error.message}`);
+            debugLog(`refactoring_assistant failed: ${error.message}`);
             return {
               success: false,
               error: `SELF_CORRECT_ATTEMPT: The refactoring operation failed with error: "${error.message}". Please generate a new plan using the 'multi_file_edit' tool for more direct text manipulation across multiple files. Break down the refactoring into smaller, explicit file edits with specific line ranges and content replacements.`,
@@ -12290,19 +13202,27 @@ ${JSON.stringify(executionResult, null, 2)}` : `Plan execution failed: ${executi
           return plannerResult;
         default:
           if (toolCall.function.name.startsWith("mcp__")) {
-            return await this.executeMCPTool(toolCall);
+            result = await this.executeMCPTool(toolCall);
+          } else {
+            result = {
+              success: false,
+              error: `Unknown tool: ${toolCall.function.name}`
+            };
           }
-          return {
-            success: false,
-            error: `Unknown tool: ${toolCall.function.name}`
-          };
+          break;
       }
+      this.metrics.endOperation(operationId, result.success, result.error);
+      return result;
     } catch (error) {
-      console.warn(`Tool ${toolCall.function.name} failed: ${error.message}`);
+      debugLog(`Tool ${toolCall.function.name} failed: ${error.message}`);
       if (this.fallbackStrategies.has(toolCall.function.name)) {
-        console.log(`Attempting self-correction for ${toolCall.function.name}...`);
-        return await this.attemptFallback(toolCall, error);
+        debugLog(`Attempting self-correction for ${toolCall.function.name}...`);
+        this.metrics.incrementRetry(operationId);
+        const fallbackResult = await this.attemptFallback(toolCall, error);
+        this.metrics.endOperation(operationId, fallbackResult.success, fallbackResult.error, "fallback_strategy");
+        return fallbackResult;
       }
+      this.metrics.endOperation(operationId, false, error.message);
       return {
         success: false,
         error: `Tool execution error: ${error.message}`
@@ -12344,15 +13264,15 @@ ${JSON.stringify(executionResult, null, 2)}` : `Plan execution failed: ${executi
   }
   saveSessionLog() {
     try {
-      const sessionDir = path10__default.join(__require("os").homedir(), ".grok");
+      const sessionDir = path12__default.join(__require("os").homedir(), ".grok");
       if (!fs__default.existsSync(sessionDir)) {
         fs__default.mkdirSync(sessionDir, { recursive: true });
       }
-      const sessionFile = path10__default.join(sessionDir, "session.log");
+      const sessionFile = path12__default.join(sessionDir, "session.log");
       const logLines = this.chatHistory.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
       fs__default.writeFileSync(sessionFile, logLines);
     } catch (error) {
-      console.warn("Failed to save session log:", error);
+      debugLog("Failed to save session log:", error);
     }
   }
   getCurrentDirectory() {
@@ -12376,7 +13296,7 @@ ${JSON.stringify(executionResult, null, 2)}` : `Plan execution failed: ${executi
   }
   logEntry(entry) {
     try {
-      const dir = path10__default.dirname(this.sessionLogPath);
+      const dir = path12__default.dirname(this.sessionLogPath);
       if (!fs__default.existsSync(dir)) {
         fs__default.mkdirSync(dir, { recursive: true });
       }
@@ -12389,7 +13309,7 @@ ${JSON.stringify(executionResult, null, 2)}` : `Plan execution failed: ${executi
       }) + "\n";
       fs__default.appendFileSync(this.sessionLogPath, logLine);
     } catch (error) {
-      console.warn("Failed to log session entry:", error);
+      debugLog("Failed to log session entry:", error);
     }
   }
   getSessionLogPath() {
@@ -12497,21 +13417,21 @@ ${planPreview}`,
         error: `No fallback strategy available for ${toolName}: ${originalError.message}`
       };
     }
-    console.log(`\u{1F504} Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
-    console.log(`   Strategy: ${strategy.description}`);
+    debugLog(`\u{1F504} Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
+    debugLog(`   Strategy: ${strategy.description}`);
     try {
       const result = await this.executeFallbackStrategy(toolCall, strategy, originalError);
       if (result.success) {
         this.toolRetryCount.delete(retryKey);
-        console.log(`\u2705 Self-correction successful for ${toolName}`);
+        debugLog(`\u2705 Self-correction successful for ${toolName}`);
       }
       return result;
     } catch (fallbackError) {
-      console.warn(`\u274C Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
+      debugLog(`\u274C Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
       if (currentRetries + 1 < this.maxRetries) {
         const backoffMs = Math.pow(2, currentRetries) * 1e3;
-        console.log(`   Waiting ${backoffMs}ms before next retry...`);
-        await new Promise((resolve8) => setTimeout(resolve8, backoffMs));
+        debugLog(`   Waiting ${backoffMs}ms before next retry...`);
+        await new Promise((resolve10) => setTimeout(resolve10, backoffMs));
         return await this.attemptFallback(toolCall, originalError);
       }
       this.toolRetryCount.delete(retryKey);
@@ -12548,7 +13468,7 @@ ${planPreview}`,
   async decomposeAndRetry(originalToolCall, strategy, args) {
     const toolName = originalToolCall.function.name;
     if (toolName === "refactoring_assistant") {
-      console.log("   Breaking down refactoring into file edits...");
+      debugLog("   Breaking down refactoring into file edits...");
       const fallbackTool = strategy.fallbackTools[0];
       const fallbackCall = {
         id: `fallback_${originalToolCall.id}`,
@@ -12579,7 +13499,7 @@ ${planPreview}`,
   async sequentialExecution(originalToolCall, strategy, args) {
     const toolName = originalToolCall.function.name;
     if (toolName === "multi_file_edit" && args.operations) {
-      console.log(`   Executing ${args.operations.length} operations sequentially...`);
+      debugLog(`   Executing ${args.operations.length} operations sequentially...`);
       const results = [];
       const fallbackTool = strategy.fallbackTools[0];
       for (const op of args.operations) {
@@ -12619,7 +13539,7 @@ ${planPreview}`,
    * Use a simpler tool as fallback
    */
   async useSimplerTool(originalToolCall, strategy, args) {
-    console.log(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
+    debugLog(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
     const fallbackTool = strategy.fallbackTools[0];
     const fallbackCall = {
       id: `fallback_simple_${originalToolCall.id}`,
@@ -12636,7 +13556,7 @@ ${planPreview}`,
    */
   async bashFallback(originalToolCall, _strategy, args, originalError) {
     const toolName = originalToolCall.function.name;
-    console.log("   Falling back to bash commands...");
+    debugLog("   Falling back to bash commands...");
     try {
       if (toolName === "symbol_search" || toolName === "advanced_search") {
         const query = args.query || args.pattern || "";
@@ -12718,7 +13638,7 @@ ${preview}`,
         plan: confirmResult.success ? plan : void 0
       };
     } catch (error) {
-      console.error("Plan generation error:", error);
+      debugLog("Plan generation error:", error);
       return { approved: false };
     }
   }
@@ -12763,7 +13683,7 @@ ${preview}`,
         step.error = error.message;
         results.push({ stepId: step.id, success: false, error: error.message });
         if (this.taskOrchestrator["config"].autoRollbackOnFailure) {
-          console.warn("Auto-rollback triggered");
+          debugLog("Auto-rollback triggered");
           break;
         }
       }
@@ -12790,7 +13710,7 @@ ${preview}`,
       fallbackStrategy: "decompose_and_retry"
     });
     this.correctionAttempts.set(correctionKey, attempts);
-    console.log(`\u{1F504} Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
+    debugLog(`\u{1F504} Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
     return {
       shouldRetry: true,
       fallbackRequest: fallbackRequest || void 0
@@ -12800,14 +13720,27 @@ ${preview}`,
    * Hash a request for tracking correction attempts
    */
   hashRequest(request) {
-    const crypto2 = __require("crypto");
-    return crypto2.createHash("md5").update(request).digest("hex");
+    return createHash("md5").update(request).digest("hex");
+  }
+  /**
+   * Get metrics summary
+   */
+  getMetricsSummary() {
+    return this.metrics.getAggregatedMetrics();
+  }
+  /**
+   * Print metrics summary to console
+   */
+  printMetricsSummary() {
+    this.metrics.printSummary();
+  }
+  /**
+   * Enable verbose metrics logging
+   */
+  setVerboseMetrics(verbose) {
+    this.metrics.setVerbose(verbose);
   }
 };
-
-// package.json
-var package_default = {
-  version: "1.0.49"};
 
 // src/utils/text-utils.ts
 function isWordBoundary(char) {
@@ -13199,7 +14132,7 @@ function updateCurrentModel(modelName) {
 }
 var ClaudeMdParserImpl = class {
   async parseClaude(rootPath) {
-    const claudePath = path10__default.join(rootPath, "CLAUDE.md");
+    const claudePath = path12__default.join(rootPath, "CLAUDE.md");
     if (!existsSync(claudePath)) {
       return {
         exists: false,
@@ -13224,7 +14157,7 @@ var ClaudeMdParserImpl = class {
     }
   }
   async updateClaude(rootPath, documentationSection) {
-    const claudePath = path10__default.join(rootPath, "CLAUDE.md");
+    const claudePath = path12__default.join(rootPath, "CLAUDE.md");
     try {
       const { exists, content, hasDocumentationSection } = await this.parseClaude(rootPath);
       if (hasDocumentationSection) {
@@ -13300,7 +14233,7 @@ var AgentSystemGenerator = class {
     this.config = config2;
   }
   async generateAgentSystem() {
-    const agentPath = path10__default.join(this.config.rootPath, ".agent");
+    const agentPath = path12__default.join(this.config.rootPath, ".agent");
     const filesCreated = [];
     try {
       if (existsSync(agentPath)) {
@@ -13311,14 +14244,14 @@ var AgentSystemGenerator = class {
         };
       }
       await ops9.mkdir(agentPath, { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "system"), { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "tasks"), { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "sop"), { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "incidents"), { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "guardrails"), { recursive: true });
-      await ops9.mkdir(path10__default.join(agentPath, "commands"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "system"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "tasks"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "sop"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "incidents"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "guardrails"), { recursive: true });
+      await ops9.mkdir(path12__default.join(agentPath, "commands"), { recursive: true });
       const readmeContent = this.generateReadmeContent();
-      await ops9.promises.writeFile(path10__default.join(agentPath, "README.md"), readmeContent);
+      await ops9.promises.writeFile(path12__default.join(agentPath, "README.md"), readmeContent);
       filesCreated.push(".agent/README.md");
       const systemFiles = await this.generateSystemDocs(agentPath);
       filesCreated.push(...systemFiles);
@@ -13425,16 +14358,16 @@ Documentation for documentation system commands:
 `;
   }
   async generateSystemDocs(agentPath) {
-    const systemPath = path10__default.join(agentPath, "system");
+    const systemPath = path12__default.join(agentPath, "system");
     const files = [];
     const archContent = this.config.projectType === "grok-cli" ? this.generateGrokArchitecture() : this.generateExternalArchitecture();
-    await ops9.promises.writeFile(path10__default.join(systemPath, "architecture.md"), archContent);
+    await ops9.promises.writeFile(path12__default.join(systemPath, "architecture.md"), archContent);
     files.push(".agent/system/architecture.md");
     const criticalStateContent = this.generateCriticalState();
-    await ops9.promises.writeFile(path10__default.join(systemPath, "critical-state.md"), criticalStateContent);
+    await ops9.promises.writeFile(path12__default.join(systemPath, "critical-state.md"), criticalStateContent);
     files.push(".agent/system/critical-state.md");
     const apiContent = this.generateApiSchema();
-    await ops9.promises.writeFile(path10__default.join(systemPath, "api-schema.md"), apiContent);
+    await ops9.promises.writeFile(path12__default.join(systemPath, "api-schema.md"), apiContent);
     files.push(".agent/system/api-schema.md");
     return files;
   }
@@ -13726,7 +14659,7 @@ interface Tool {
     }
   }
   async generateInitialSOPs(agentPath) {
-    const sopPath = path10__default.join(agentPath, "sop");
+    const sopPath = path12__default.join(agentPath, "sop");
     const files = [];
     const docWorkflowContent = `# \u{1F4DA} Documentation Workflow SOP
 
@@ -13791,7 +14724,7 @@ interface Tool {
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-    await ops9.promises.writeFile(path10__default.join(sopPath, "documentation-workflow.md"), docWorkflowContent);
+    await ops9.promises.writeFile(path12__default.join(sopPath, "documentation-workflow.md"), docWorkflowContent);
     files.push(".agent/sop/documentation-workflow.md");
     if (this.config.projectType === "grok-cli") {
       const newCommandContent = `# \u2699\uFE0F Adding New Commands SOP
@@ -13866,16 +14799,16 @@ Create tool in \`src/tools/\`, then reference in command handler.
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-      await ops9.promises.writeFile(path10__default.join(sopPath, "adding-new-command.md"), newCommandContent);
+      await ops9.promises.writeFile(path12__default.join(sopPath, "adding-new-command.md"), newCommandContent);
       files.push(".agent/sop/adding-new-command.md");
     }
     return files;
   }
   async generateExampleTask(agentPath) {
-    const tasksPath = path10__default.join(agentPath, "tasks");
+    const tasksPath = path12__default.join(agentPath, "tasks");
     const files = [];
     const exampleContent = this.config.projectType === "grok-cli" ? this.generateGrokExampleTask() : this.generateExternalExampleTask();
-    await ops9.promises.writeFile(path10__default.join(tasksPath, "example-prd.md"), exampleContent);
+    await ops9.promises.writeFile(path12__default.join(tasksPath, "example-prd.md"), exampleContent);
     files.push(".agent/tasks/example-prd.md");
     return files;
   }
@@ -13998,7 +14931,7 @@ Grok CLI needs better documentation tools to help users document both the CLI it
 `;
   }
   async generateCommandDocs(agentPath) {
-    const commandsPath = path10__default.join(agentPath, "commands");
+    const commandsPath = path12__default.join(agentPath, "commands");
     const files = [];
     const initAgentContent = `# \u{1F4D6} /init-agent Command
 
@@ -14067,12 +15000,12 @@ After initialization:
 
 *Updated: ${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}*
 `;
-    await ops9.promises.writeFile(path10__default.join(commandsPath, "init-agent.md"), initAgentContent);
+    await ops9.promises.writeFile(path12__default.join(commandsPath, "init-agent.md"), initAgentContent);
     files.push(".agent/commands/init-agent.md");
     return files;
   }
   async rebuildAgentSystem() {
-    const agentPath = path10__default.join(this.config.rootPath, ".agent");
+    const agentPath = path12__default.join(this.config.rootPath, ".agent");
     try {
       if (existsSync(agentPath)) {
         await ops9.rm(agentPath, { recursive: true, force: true });
@@ -14152,7 +15085,7 @@ var ReadmeGenerator = class {
   async generateReadme() {
     try {
       const analysis = await this.analyzeProject();
-      const readmePath = path10__default.join(this.config.rootPath, "README.md");
+      const readmePath = path12__default.join(this.config.rootPath, "README.md");
       const readmeExists = existsSync(readmePath);
       if (readmeExists && !this.config.updateExisting) {
         return {
@@ -14186,14 +15119,14 @@ var ReadmeGenerator = class {
       mainFiles: []
     };
     try {
-      const packagePath = path10__default.join(this.config.rootPath, "package.json");
+      const packagePath = path12__default.join(this.config.rootPath, "package.json");
       if (existsSync(packagePath)) {
         const packageContent = await ops9.promises.readFile(packagePath, "utf-8");
         analysis.packageJson = JSON.parse(packageContent);
         analysis.dependencies = Object.keys(analysis.packageJson.dependencies || {});
         analysis.devDependencies = Object.keys(analysis.packageJson.devDependencies || {});
         analysis.hasReact = analysis.dependencies.includes("react") || analysis.devDependencies.includes("react");
-        analysis.hasTypeScript = analysis.devDependencies.includes("typescript") || existsSync(path10__default.join(this.config.rootPath, "tsconfig.json"));
+        analysis.hasTypeScript = analysis.devDependencies.includes("typescript") || existsSync(path12__default.join(this.config.rootPath, "tsconfig.json"));
         const scripts = analysis.packageJson.scripts || {};
         analysis.buildScripts = Object.keys(scripts).filter(
           (script) => ["build", "dev", "start", "test", "lint", "typecheck"].includes(script)
@@ -14205,7 +15138,7 @@ var ReadmeGenerator = class {
       }
       const commonFiles = ["src/", "lib/", "docs/", "test/", "tests/", "__tests__/"];
       for (const file of commonFiles) {
-        if (existsSync(path10__default.join(this.config.rootPath, file))) {
+        if (existsSync(path12__default.join(this.config.rootPath, file))) {
           if (file.includes("test")) analysis.hasTests = true;
           if (file.includes("docs")) analysis.hasDocs = true;
           analysis.mainFiles.push(file);
@@ -14377,7 +15310,7 @@ npm run build
     content += `## \u2699\uFE0F Configuration
 
 `;
-    if (existsSync(path10__default.join(this.config.rootPath, ".env.example"))) {
+    if (existsSync(path12__default.join(this.config.rootPath, ".env.example"))) {
       content += `Copy \`.env.example\` to \`.env\` and configure your environment variables:
 
 `;
@@ -14493,8 +15426,8 @@ var CommentsGenerator = class {
       const commentCount = this.countAddedComments(analysis);
       return {
         success: true,
-        message: `\u2705 Added ${commentCount} comments to ${path10__default.basename(this.config.filePath)}
-\u{1F4C1} Backup created: ${path10__default.basename(backupPath)}`,
+        message: `\u2705 Added ${commentCount} comments to ${path12__default.basename(this.config.filePath)}
+\u{1F4C1} Backup created: ${path12__default.basename(backupPath)}`,
         modifiedContent
       };
     } catch (error) {
@@ -14562,7 +15495,7 @@ var CommentsGenerator = class {
     return analysis;
   }
   detectLanguage() {
-    const ext = path10__default.extname(this.config.filePath);
+    const ext = path12__default.extname(this.config.filePath);
     switch (ext) {
       case ".ts":
       case ".tsx":
@@ -14703,7 +15636,7 @@ var ApiDocsGenerator = class {
       }
       const content = this.config.outputFormat === "md" ? this.generateMarkdown(documentation) : this.generateHtml(documentation);
       const outputFileName = `api-docs.${this.config.outputFormat}`;
-      const outputPath = path10__default.join(this.config.rootPath, outputFileName);
+      const outputPath = path12__default.join(this.config.rootPath, outputFileName);
       await ops9.promises.writeFile(outputPath, content);
       const stats = this.getDocumentationStats(documentation);
       return {
@@ -14731,7 +15664,7 @@ ${stats}`,
     };
     const scanPaths = this.config.scanPaths.length > 0 ? this.config.scanPaths : ["src/", "lib/", "./"];
     for (const scanPath of scanPaths) {
-      const fullPath = path10__default.join(this.config.rootPath, scanPath);
+      const fullPath = path12__default.join(this.config.rootPath, scanPath);
       if (existsSync(fullPath)) {
         await this.scanDirectory(fullPath, documentation);
       }
@@ -14742,7 +15675,7 @@ ${stats}`,
     try {
       const entries = await ops9.promises.readdir(dirPath, { withFileTypes: true });
       for (const entry of entries) {
-        const fullPath = path10__default.join(dirPath, entry.name);
+        const fullPath = path12__default.join(dirPath, entry.name);
         if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
           await this.scanDirectory(fullPath, documentation);
         } else if (entry.isFile() && this.isApiFile(entry.name)) {
@@ -14754,13 +15687,13 @@ ${stats}`,
   }
   isApiFile(fileName) {
     const apiExtensions = [".ts", ".js", ".tsx", ".jsx"];
-    const ext = path10__default.extname(fileName);
+    const ext = path12__default.extname(fileName);
     return apiExtensions.includes(ext) && !fileName.includes(".test.") && !fileName.includes(".spec.") && !fileName.includes(".d.ts");
   }
   async parseApiFile(filePath, documentation) {
     try {
       const content = await ops9.promises.readFile(filePath, "utf-8");
-      const relativePath = path10__default.relative(this.config.rootPath, filePath);
+      const relativePath = path12__default.relative(this.config.rootPath, filePath);
       const moduleName = this.getModuleName(relativePath);
       const lines = content.split("\n");
       const moduleInfo = {
@@ -15066,7 +15999,7 @@ var ChangelogGenerator = class {
   }
   async generateChangelog() {
     try {
-      const gitPath = path10__default.join(this.config.rootPath, ".git");
+      const gitPath = path12__default.join(this.config.rootPath, ".git");
       if (!existsSync(gitPath)) {
         return {
           success: false,
@@ -15082,7 +16015,7 @@ var ChangelogGenerator = class {
       }
       const sections = this.organizeCommits(commits);
       const content = this.generateChangelogContent(sections);
-      const changelogPath = path10__default.join(this.config.rootPath, "CHANGELOG.md");
+      const changelogPath = path12__default.join(this.config.rootPath, "CHANGELOG.md");
       const exists = existsSync(changelogPath);
       if (exists) {
         const existingContent = await ops9.promises.readFile(changelogPath, "utf-8");
@@ -15105,7 +16038,7 @@ var ChangelogGenerator = class {
     }
   }
   async getGitCommits() {
-    const { execSync: execSync2 } = __require("child_process");
+    const { execSync } = __require("child_process");
     try {
       let gitCommand2 = 'git log --pretty=format:"%H|%ad|%an|%s|%b" --date=short';
       if (this.config.sinceVersion) {
@@ -15115,7 +16048,7 @@ var ChangelogGenerator = class {
       } else {
         gitCommand2 += " -n 50";
       }
-      const output = execSync2(gitCommand2, {
+      const output = execSync(gitCommand2, {
         cwd: this.config.rootPath,
         encoding: "utf-8"
       });
@@ -15294,7 +16227,7 @@ var UpdateAgentDocs = class {
   }
   async updateDocs() {
     try {
-      const agentPath = path10__default.join(this.config.rootPath, ".agent");
+      const agentPath = path12__default.join(this.config.rootPath, ".agent");
       if (!existsSync(agentPath)) {
         return {
           success: false,
@@ -15350,9 +16283,9 @@ var UpdateAgentDocs = class {
       hasNewFeatures: false
     };
     try {
-      const { execSync: execSync2 } = __require("child_process");
+      const { execSync } = __require("child_process");
       try {
-        const commits = execSync2("git log --oneline -10", {
+        const commits = execSync("git log --oneline -10", {
           cwd: this.config.rootPath,
           encoding: "utf-8"
         });
@@ -15360,7 +16293,7 @@ var UpdateAgentDocs = class {
       } catch (error) {
       }
       try {
-        const changedFiles = execSync2("git diff --name-only HEAD~5..HEAD", {
+        const changedFiles = execSync("git diff --name-only HEAD~5..HEAD", {
           cwd: this.config.rootPath,
           encoding: "utf-8"
         });
@@ -15383,13 +16316,13 @@ var UpdateAgentDocs = class {
       try {
         const entries = await ops9.promises.readdir(dirPath, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path10__default.join(dirPath, entry.name);
+          const fullPath = path12__default.join(dirPath, entry.name);
           if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
             await scanDir(fullPath);
           } else if (entry.isFile()) {
             const stats = await ops9.promises.stat(fullPath);
             if (stats.mtime.getTime() > oneDayAgo) {
-              recentFiles.push(path10__default.relative(this.config.rootPath, fullPath));
+              recentFiles.push(path12__default.relative(this.config.rootPath, fullPath));
             }
           }
         }
@@ -15438,10 +16371,10 @@ var UpdateAgentDocs = class {
   }
   async updateSystemDocs(analysis) {
     const updatedFiles = [];
-    const systemPath = path10__default.join(this.config.rootPath, ".agent", "system");
+    const systemPath = path12__default.join(this.config.rootPath, ".agent", "system");
     if (analysis.architectureChanges) {
       try {
-        const archPath = path10__default.join(systemPath, "architecture.md");
+        const archPath = path12__default.join(systemPath, "architecture.md");
         if (existsSync(archPath)) {
           const content = await ops9.promises.readFile(archPath, "utf-8");
           const updatedContent = await this.updateArchitectureDoc(content, analysis);
@@ -15455,7 +16388,7 @@ var UpdateAgentDocs = class {
   }
   async updateCriticalState(analysis) {
     try {
-      const criticalStatePath = path10__default.join(this.config.rootPath, ".agent", "system", "critical-state.md");
+      const criticalStatePath = path12__default.join(this.config.rootPath, ".agent", "system", "critical-state.md");
       if (!existsSync(criticalStatePath)) {
         return false;
       }
@@ -15850,7 +16783,7 @@ This is a generated document for ${projectPath}.
     };
   }
   delay(ms) {
-    return new Promise((resolve8) => setTimeout(resolve8, ms));
+    return new Promise((resolve10) => setTimeout(resolve10, ms));
   }
   generateTaskId() {
     return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -15918,7 +16851,7 @@ This is a generated document for ${projectPath}.
 var SelfHealingSystem = class {
   constructor(rootPath, config2) {
     this.rootPath = rootPath;
-    this.agentPath = path10__default.join(rootPath, ".agent");
+    this.agentPath = path12__default.join(rootPath, ".agent");
     this.config = {
       enabled: true,
       onErrorPrompt: "gentle",
@@ -15930,8 +16863,8 @@ var SelfHealingSystem = class {
   async captureIncident(error, context) {
     try {
       const incident = await this.analyzeAndCreateIncident(error, context);
-      const incidentPath = path10__default.join(this.agentPath, "incidents", `${incident.id}.md`);
-      await ops9.mkdir(path10__default.dirname(incidentPath), { recursive: true });
+      const incidentPath = path12__default.join(this.agentPath, "incidents", `${incident.id}.md`);
+      await ops9.mkdir(path12__default.dirname(incidentPath), { recursive: true });
       const incidentContent = this.generateIncidentContent(incident);
       await ops9.promises.writeFile(incidentPath, incidentContent);
       const guardrail = await this.generateGuardrailFromIncident(incident);
@@ -16059,7 +16992,7 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
   }
   async countPreviousOccurrences(title) {
     try {
-      const incidentsPath = path10__default.join(this.agentPath, "incidents");
+      const incidentsPath = path12__default.join(this.agentPath, "incidents");
       if (!existsSync(incidentsPath)) {
         return 0;
       }
@@ -16067,7 +17000,7 @@ ${guardrail ? `\u{1F6E1}\uFE0F Guardrail created: ${guardrail.name}` : ""}
       let count = 0;
       for (const file of files) {
         if (file.endsWith(".md")) {
-          const filePath = path10__default.join(incidentsPath, file);
+          const filePath = path12__default.join(incidentsPath, file);
           const content = await ops9.promises.readFile(filePath, "utf-8");
           if (content.includes(title)) {
             count++;
@@ -16160,9 +17093,9 @@ ${incident.guardrailCreated ? `Guardrail created: ${incident.guardrailCreated}` 
     return null;
   }
   async saveGuardrail(guardrail) {
-    const guardrailsPath = path10__default.join(this.agentPath, "guardrails");
+    const guardrailsPath = path12__default.join(this.agentPath, "guardrails");
     await ops9.mkdir(guardrailsPath, { recursive: true });
-    const filePath = path10__default.join(guardrailsPath, `${guardrail.id}.md`);
+    const filePath = path12__default.join(guardrailsPath, `${guardrail.id}.md`);
     const content = this.generateGuardrailContent(guardrail);
     await ops9.promises.writeFile(filePath, content);
   }
@@ -16219,7 +17152,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     };
   }
   async loadAllGuardrails() {
-    const guardrailsPath = path10__default.join(this.agentPath, "guardrails");
+    const guardrailsPath = path12__default.join(this.agentPath, "guardrails");
     if (!existsSync(guardrailsPath)) {
       return [];
     }
@@ -16228,7 +17161,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     for (const file of files) {
       if (file.endsWith(".md")) {
         try {
-          const content = await ops9.promises.readFile(path10__default.join(guardrailsPath, file), "utf-8");
+          const content = await ops9.promises.readFile(path12__default.join(guardrailsPath, file), "utf-8");
           const guardrail = this.parseGuardrailFromContent(content);
           if (guardrail) {
             guardrails.push(guardrail);
@@ -16284,7 +17217,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     return `incident_${timestamp}_${random}`;
   }
   async listIncidents() {
-    const incidentsPath = path10__default.join(this.agentPath, "incidents");
+    const incidentsPath = path12__default.join(this.agentPath, "incidents");
     if (!existsSync(incidentsPath)) {
       return [];
     }
@@ -16293,7 +17226,7 @@ ${guardrail.createdFrom ? `- Created from incident: ${guardrail.createdFrom}` : 
     for (const file of files) {
       if (file.endsWith(".md")) {
         try {
-          const content = await ops9.promises.readFile(path10__default.join(incidentsPath, file), "utf-8");
+          const content = await ops9.promises.readFile(path12__default.join(incidentsPath, file), "utf-8");
           const incident = this.parseIncidentFromContent(content);
           if (incident) {
             incidents.push(incident);
@@ -16966,7 +17899,7 @@ Executing: \`${docsMenuOption.command}\`...`,
         }
         const commentType = args.includes("--functions") ? "functions" : args.includes("--classes") ? "classes" : "all";
         const generator = new CommentsGenerator({
-          filePath: filePath.startsWith("/") ? filePath : path10__default.join(process.cwd(), filePath),
+          filePath: filePath.startsWith("/") ? filePath : path12__default.join(process.cwd(), filePath),
           commentType,
           style: "auto"
         });
@@ -17588,7 +18521,7 @@ var loadingTexts = [
   "Caffeinating algorithms...",
   "Debugging the universe..."
 ];
-function LoadingSpinner({
+var LoadingSpinner = React3.memo(function LoadingSpinner2({
   isActive,
   processingTime,
   tokenCount
@@ -17624,7 +18557,7 @@ function LoadingSpinner({
       " tokens \xB7 esc to interrupt)"
     ] })
   ] });
-}
+});
 function ModelSelection({
   models,
   selectedIndex,
@@ -18060,7 +18993,7 @@ var MemoizedChatEntry = React3.memo(
   }
 );
 MemoizedChatEntry.displayName = "MemoizedChatEntry";
-function ChatHistory({
+var ChatHistory = React3.memo(function ChatHistory2({
   entries,
   isConfirmationActive = false
 }) {
@@ -18076,8 +19009,8 @@ function ChatHistory({
     },
     entry.timestamp.getTime()
   )) });
-}
-function ChatInput({
+});
+var ChatInput = React3.memo(function ChatInput2({
   input,
   cursorPosition,
   isProcessing,
@@ -18166,7 +19099,7 @@ function ChatInput({
       ] })
     }
   );
-}
+});
 function MCPStatus({}) {
   const [connectedServers, setConnectedServers] = useState([]);
   const [availableTools, setAvailableTools] = useState([]);
@@ -18400,6 +19333,25 @@ function ApiKeyInput({ onApiKeySet }) {
     isSubmitting ? /* @__PURE__ */ jsx(Box, { marginTop: 1, children: /* @__PURE__ */ jsx(Text, { color: "yellow", children: "\u{1F504} Validating API key..." }) }) : null
   ] });
 }
+var Logo = React3.memo(function Logo2() {
+  return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginBottom: 2, children: [
+    /* @__PURE__ */ jsx(Text, { color: "cyan", bold: true, children: `    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
+               dBP   dB'.BP  dBP.d8P
+  dBBBB    dBBBBK'  dB'.BP  dBBBBP'          dBP    dBP    dBP
+ dB' BB   dBP  BB  dB'.BP  dBP BB  dBBBBBP  dBP    dBP    dBP
+dBBBBBB  dBP  dB' dBBBBP  dBP dB'          dBBBBP dBBBBP dBP    ` }),
+    /* @__PURE__ */ jsx(Text, { color: "cyan", bold: true, children: "Tips for getting started:" }),
+    /* @__PURE__ */ jsxs(Box, { marginTop: 1, flexDirection: "column", children: [
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: "1. Ask questions, edit files, or run commands." }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: "2. Be specific for the best results." }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: "3. Create GROK.md files to customize your interactions with Grok." }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: "4. Press Shift+Tab to toggle auto-edit mode." }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: '5. Run "/init-agent" to set up an .agent docs system for this project.' }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: '6. Run "/heal" after errors to capture a fix and add a guardrail.' }),
+      /* @__PURE__ */ jsx(Text, { color: "gray", children: "7. /help for more information." })
+    ] })
+  ] });
+});
 function ChatInterfaceWithAgent({
   agent,
   initialMessage
@@ -18437,23 +19389,6 @@ function ChatInterfaceWithAgent({
     isConfirmationActive: !!confirmationOptions
   });
   useEffect(() => {
-    const isWindows = process.platform === "win32";
-    const isPowerShell = process.env.ComSpec?.toLowerCase().includes("powershell") || process.env.PSModulePath !== void 0;
-    if (!isWindows || !isPowerShell) {
-      console.clear();
-    }
-    console.log("    ");
-    console.log(" ");
-    const logoOutput = "HURRY MODE\n" + package_default.version;
-    const logoLines = logoOutput.split("\n");
-    logoLines.forEach((line) => {
-      if (line.trim()) {
-        console.log(" " + line);
-      } else {
-        console.log(line);
-      }
-    });
-    console.log(" ");
     setChatHistory([]);
   }, []);
   useEffect(() => {
@@ -18468,120 +19403,76 @@ function ChatInterfaceWithAgent({
         setIsProcessing(true);
         setIsStreaming(true);
         try {
-          let streamingEntry = null;
-          let accumulatedContent = "";
-          let lastTokenCount = 0;
-          let pendingToolCalls = null;
-          let pendingToolResults = [];
-          let lastUpdateTime = Date.now();
-          const flushUpdates = () => {
-            const now = Date.now();
-            if (now - lastUpdateTime < 150) return;
-            if (lastTokenCount !== 0) {
-              setTokenCount(lastTokenCount);
-            }
-            if (accumulatedContent) {
-              if (!streamingEntry) {
-                const newStreamingEntry = {
-                  type: "assistant",
-                  content: accumulatedContent,
-                  timestamp: /* @__PURE__ */ new Date(),
-                  isStreaming: true
-                };
-                setChatHistory((prev) => [...prev, newStreamingEntry]);
-                streamingEntry = newStreamingEntry;
-              } else {
-                setChatHistory(
-                  (prev) => prev.map(
-                    (entry, idx) => idx === prev.length - 1 && entry.isStreaming ? { ...entry, content: entry.content + accumulatedContent } : entry
-                  )
-                );
-              }
-              accumulatedContent = "";
-            }
-            if (pendingToolCalls) {
-              setChatHistory(
-                (prev) => prev.map(
-                  (entry) => entry.isStreaming ? {
-                    ...entry,
-                    isStreaming: false,
-                    toolCalls: pendingToolCalls || void 0
-                  } : entry
-                )
-              );
-              streamingEntry = null;
-              pendingToolCalls.forEach((toolCall) => {
-                const toolCallEntry = {
-                  type: "tool_call",
-                  content: "Executing...",
-                  timestamp: /* @__PURE__ */ new Date(),
-                  toolCall
-                };
-                setChatHistory((prev) => [...prev, toolCallEntry]);
-              });
-              pendingToolCalls = null;
-            }
-            if (pendingToolResults.length > 0) {
-              setChatHistory(
-                (prev) => prev.map((entry) => {
-                  if (entry.isStreaming) {
-                    return { ...entry, isStreaming: false };
-                  }
-                  const matchingResult = pendingToolResults.find(
-                    (result) => entry.type === "tool_call" && entry.toolCall?.id === result.toolCall.id
-                  );
-                  if (matchingResult) {
-                    return {
-                      ...entry,
-                      type: "tool_result",
-                      content: matchingResult.toolResult.success ? matchingResult.toolResult.output || "Success" : matchingResult.toolResult.error || "Error occurred",
-                      toolResult: matchingResult.toolResult
-                    };
-                  }
-                  return entry;
-                })
-              );
-              streamingEntry = null;
-              pendingToolResults = [];
-            }
-            lastUpdateTime = now;
-          };
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
-            switch (chunk.type) {
-              case "content":
-                if (chunk.content) {
-                  accumulatedContent += chunk.content;
-                }
-                break;
-              case "token_count":
-                if (chunk.tokenCount !== void 0) {
-                  lastTokenCount = chunk.tokenCount;
-                }
-                break;
-              case "tool_calls":
-                if (chunk.toolCalls) {
-                  pendingToolCalls = chunk.toolCalls;
-                }
-                break;
-              case "tool_result":
-                if (chunk.toolCall && chunk.toolResult) {
-                  pendingToolResults.push({ toolCall: chunk.toolCall, toolResult: chunk.toolResult });
-                }
-                break;
-              case "done":
-                flushUpdates();
-                break;
-            }
-            flushUpdates();
+            setChatHistory((prev) => {
+              const lastEntry = prev[prev.length - 1];
+              switch (chunk.type) {
+                case "content":
+                  if (chunk.content) {
+                    if (lastEntry?.isStreaming) {
+                      return prev.map(
+                        (entry, idx) => idx === prev.length - 1 ? { ...entry, content: entry.content + chunk.content } : entry
+                      );
+                    } else {
+                      return [
+                        ...prev,
+                        {
+                          type: "assistant",
+                          content: chunk.content,
+                          timestamp: /* @__PURE__ */ new Date(),
+                          isStreaming: true
+                        }
+                      ];
+                    }
+                  }
+                  break;
+                case "token_count":
+                  if (chunk.tokenCount !== void 0) {
+                    setTokenCount(chunk.tokenCount);
+                  }
+                  break;
+                case "tool_calls":
+                  if (chunk.toolCalls) {
+                    const updatedPrev = prev.map(
+                      (entry) => entry.isStreaming ? { ...entry, isStreaming: false, toolCalls: chunk.toolCalls } : entry
+                    );
+                    const toolCallEntries = chunk.toolCalls.map((toolCall) => ({
+                      type: "tool_call",
+                      content: "Executing...",
+                      timestamp: /* @__PURE__ */ new Date(),
+                      toolCall
+                    }));
+                    return [...updatedPrev, ...toolCallEntries];
+                  }
+                  break;
+                case "tool_result":
+                  if (chunk.toolCall && chunk.toolResult) {
+                    return prev.map((entry) => {
+                      if (entry.type === "tool_call" && entry.toolCall?.id === chunk.toolCall.id) {
+                        return {
+                          ...entry,
+                          type: "tool_result",
+                          content: chunk.toolResult.success ? chunk.toolResult.output || "Success" : chunk.toolResult.error || "Error occurred",
+                          toolResult: chunk.toolResult
+                        };
+                      }
+                      return entry;
+                    });
+                  }
+                  break;
+                case "done":
+                  return prev.map(
+                    (entry) => entry.isStreaming ? { ...entry, isStreaming: false } : entry
+                  );
+              }
+              return prev;
+            });
           }
-          flushUpdates();
-          if (streamingEntry) {
-            setChatHistory(
-              (prev) => prev.map(
-                (entry) => entry.isStreaming ? { ...entry, isStreaming: false } : entry
-              )
-            );
-          }
+          setChatHistory(
+            (prev) => prev.map(
+              (entry) => entry.isStreaming ? { ...entry, isStreaming: false } : entry
+            )
+          );
           setIsStreaming(false);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -18626,11 +19517,11 @@ function ChatInterfaceWithAgent({
     }, 1e3);
     return () => clearInterval(interval);
   }, [isProcessing, isStreaming]);
-  const handleConfirmation = (dontAskAgain) => {
+  const handleConfirmation = useCallback((dontAskAgain) => {
     confirmationService.confirmOperation(true, dontAskAgain);
     setConfirmationOptions(null);
-  };
-  const handleRejection = (feedback) => {
+  }, [confirmationService]);
+  const handleRejection = useCallback((feedback) => {
     confirmationService.rejectOperation(feedback);
     setConfirmationOptions(null);
     setIsProcessing(false);
@@ -18638,25 +19529,9 @@ function ChatInterfaceWithAgent({
     setTokenCount(0);
     setProcessingTime(0);
     processingStartTime.current = 0;
-  };
+  }, [confirmationService]);
   return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", paddingX: 2, children: [
-    chatHistory.length === 0 && !confirmationOptions && /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginBottom: 2, children: [
-      /* @__PURE__ */ jsx(Text, { color: "cyan", bold: true, children: `    dBBBBb dBBBBBb    dBBBBP  dBP dBP          dBBBP  dBP    dBP
-               dBP   dB'.BP  dBP.d8P                            
-  dBBBB    dBBBBK'  dB'.BP  dBBBBP'          dBP    dBP    dBP  
- dB' BB   dBP  BB  dB'.BP  dBP BB  dBBBBBP  dBP    dBP    dBP   
-dBBBBBB  dBP  dB' dBBBBP  dBP dB'          dBBBBP dBBBBP dBP    ` }),
-      /* @__PURE__ */ jsx(Text, { color: "cyan", bold: true, children: "Tips for getting started:" }),
-      /* @__PURE__ */ jsxs(Box, { marginTop: 1, flexDirection: "column", children: [
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: "1. Ask questions, edit files, or run commands." }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: "2. Be specific for the best results." }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: "3. Create GROK.md files to customize your interactions with Grok." }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: "4. Press Shift+Tab to toggle auto-edit mode." }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: '5. Run "/init-agent" to set up an .agent docs system for this project.' }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: '6. Run "/heal" after errors to capture a fix and add a guardrail.' }),
-        /* @__PURE__ */ jsx(Text, { color: "gray", children: "7. /help for more information." })
-      ] })
-    ] }),
+    chatHistory.length === 0 && !confirmationOptions && /* @__PURE__ */ jsx(Logo, {}),
     /* @__PURE__ */ jsx(Box, { flexDirection: "column", marginBottom: 1, children: /* @__PURE__ */ jsx(Text, { color: "gray", children: "Type your request in natural language. Ctrl+C to clear, 'exit' to quit." }) }),
     /* @__PURE__ */ jsx(Box, { flexDirection: "column", ref: scrollRef, children: /* @__PURE__ */ jsx(
       ChatHistory,
@@ -18948,6 +19823,10 @@ function createMCPCommand() {
   });
   return mcpCommand;
 }
+
+// package.json
+var package_default = {
+  version: "1.0.49"};
 
 // src/index.ts
 dotenv.config();

@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface ReadmeConfig {
@@ -34,7 +33,7 @@ export class ReadmeGenerator {
     try {
       // Analyze project structure
       const analysis = await this.analyzeProject();
-      
+
       // Check if README exists
       const readmePath = path.join(this.config.rootPath, 'README.md');
       const readmeExists = existsSync(readmePath);
@@ -54,7 +53,7 @@ export class ReadmeGenerator {
 
       return {
         success: true,
-        message: readmeExists 
+        message: readmeExists
           ? '✅ Updated existing README.md with comprehensive documentation'
           : '✅ Created new README.md with project documentation',
         content
@@ -86,18 +85,18 @@ export class ReadmeGenerator {
       if (existsSync(packagePath)) {
         const packageContent = await ops.promises.readFile(packagePath, 'utf-8');
         analysis.packageJson = JSON.parse(packageContent);
-        
+
         // Extract dependencies
         analysis.dependencies = Object.keys(analysis.packageJson.dependencies || {});
         analysis.devDependencies = Object.keys(analysis.packageJson.devDependencies || {});
-        
+
         // Detect technologies
         analysis.hasReact = analysis.dependencies.includes('react') || analysis.devDependencies.includes('react');
         analysis.hasTypeScript = analysis.devDependencies.includes('typescript') || existsSync(path.join(this.config.rootPath, 'tsconfig.json'));
-        
+
         // Extract build scripts
         const scripts = analysis.packageJson.scripts || {};
-        analysis.buildScripts = Object.keys(scripts).filter(script => 
+        analysis.buildScripts = Object.keys(scripts).filter(script =>
           ['build', 'dev', 'start', 'test', 'lint', 'typecheck'].includes(script)
         );
 
@@ -119,7 +118,7 @@ export class ReadmeGenerator {
       }
 
       return analysis;
-    } catch (error) {
+    } catch {
       return analysis;
     }
   }
@@ -127,7 +126,7 @@ export class ReadmeGenerator {
   private generateReadmeContent(analysis: ProjectAnalysis): string {
     const pkg = analysis.packageJson;
     const projectName = this.config.projectName || pkg?.name || 'Project';
-    
+
     let content = `# ${projectName}\n\n`;
 
     // Description
@@ -179,7 +178,7 @@ export class ReadmeGenerator {
     if (analysis.buildScripts.length > 0) {
       content += `## 🛠️ Development\n\n`;
       content += `### Available Scripts\n\n`;
-      
+
       analysis.buildScripts.forEach(script => {
         const description = this.getScriptDescription(script);
         content += `- \`npm run ${script}\` - ${description}\n`;
@@ -210,8 +209,8 @@ export class ReadmeGenerator {
       content += `## 🔧 Technology Stack\n\n`;
       if (analysis.framework) content += `- **Framework**: ${analysis.framework}\n`;
       if (analysis.hasTypeScript) content += `- **Language**: TypeScript\n`;
-      
-      const keyDeps = analysis.dependencies.filter(dep => 
+
+      const keyDeps = analysis.dependencies.filter(dep =>
         ['react', 'express', 'next', 'ink', 'commander', 'chalk'].includes(dep)
       );
       if (keyDeps.length > 0) {
@@ -261,19 +260,19 @@ export class ReadmeGenerator {
 
   private generateBadges(analysis: ProjectAnalysis): string {
     let badges = '';
-    
+
     if (analysis.packageJson?.version) {
       badges += `![Version](https://img.shields.io/badge/version-${analysis.packageJson.version}-blue.svg)\n`;
     }
-    
+
     if (analysis.hasTypeScript) {
       badges += `![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)\n`;
     }
-    
+
     if (analysis.hasReact) {
       badges += `![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)\n`;
     }
-    
+
     if (analysis.packageJson?.license) {
       badges += `![License](https://img.shields.io/badge/license-${analysis.packageJson.license}-green.svg)\n`;
     }

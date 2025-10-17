@@ -8,7 +8,8 @@ interface ChatInputProps {
   isStreaming: boolean;
 }
 
-export function ChatInput({
+// Memoize ChatInput component to prevent unnecessary re-renders
+export const ChatInput = React.memo(function ChatInput({
   input,
   cursorPosition,
   isProcessing,
@@ -129,4 +130,4 @@ export function ChatInput({
       </Box>
     </Box>
   );
-}
+});

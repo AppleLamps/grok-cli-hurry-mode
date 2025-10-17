@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { claudeMdParser } from './claude-md-parser.js';
 
@@ -64,7 +63,7 @@ export class AgentSystemGenerator {
       // Update CLAUDE.md with documentation workflow
       const documentationSection = claudeMdParser.generateDocumentationSection();
       const claudeResult = await claudeMdParser.updateClaude(this.config.rootPath, documentationSection);
-      
+
       let claudeMessage = '';
       if (claudeResult.success) {
         claudeMessage = `\n\n${claudeResult.message}`;
@@ -163,10 +162,10 @@ Documentation for documentation system commands:
     const files: string[] = [];
 
     // Architecture overview
-    const archContent = this.config.projectType === 'grok-cli' 
-      ? this.generateGrokArchitecture() 
+    const archContent = this.config.projectType === 'grok-cli'
+      ? this.generateGrokArchitecture()
       : this.generateExternalArchitecture();
-    
+
     await ops.promises.writeFile(path.join(systemPath, 'architecture.md'), archContent);
     files.push('.agent/system/architecture.md');
 
@@ -289,7 +288,7 @@ External project documented using Grok CLI's .agent system.
 
   private generateCriticalState(): string {
     const timestamp = new Date().toISOString();
-    
+
     if (this.config.projectType === 'grok-cli') {
       return `# 🔧 Current System State
 
@@ -844,7 +843,7 @@ After initialization:
 
   async rebuildAgentSystem(): Promise<{ success: boolean; message: string; filesCreated: string[] }> {
     const agentPath = path.join(this.config.rootPath, '.agent');
-    
+
     try {
       // Remove existing .agent directory if it exists
       if (existsSync(agentPath)) {

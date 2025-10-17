@@ -17,10 +17,12 @@ import { writeFile as writeFilePromise } from "fs/promises";
 
 import { ToolResult, EditorCommand } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
+import { OperationTracker } from "../utils/operation-tracker.js";
 
 export class TextEditorTool {
   private editHistory: EditorCommand[] = [];
   private confirmationService = ConfirmationService.getInstance();
+  private operationTracker = OperationTracker.getInstance();
 
   async view(
     filePath: string,
@@ -107,6 +109,30 @@ export class TextEditorTool {
 
       const content = await ops.promises.readFile(resolvedPath, "utf-8");
 
+      // Calculate what the new content would be
+      const potentialNewContent = replaceAll
+        ? content.split(oldStr).join(newStr)
+        : content.replace(oldStr, newStr);
+
+      // Check idempotency - would this edit change anything?
+      const idempotencyCheck = await this.operationTracker.checkIdempotency(
+        'edit',
+        resolvedPath,
+        potentialNewContent
+      );
+
+      if (idempotencyCheck.isDuplicate) {
+        return {
+          success: true,
+          output: `⚠️ Skipped duplicate operation: ${idempotencyCheck.reason}\n${idempotencyCheck.suggestion || ''}`,
+          metadata: {
+            skipped: true,
+            reason: idempotencyCheck.reason,
+            previousOperation: idempotencyCheck.previousOperation
+          }
+        };
+      }
+
       if (!content.includes(oldStr)) {
         if (oldStr.includes('\n')) {
           const fuzzyResult = this.findFuzzyMatch(content, oldStr);
@@ -159,10 +185,15 @@ export class TextEditorTool {
         }
       }
 
-      const newContent = replaceAll
-        ? content.split(oldStr).join(newStr)
-        : content.replace(oldStr, newStr);
+      const newContent = potentialNewContent;
       await writeFilePromise(resolvedPath, newContent, "utf-8");
+
+      // Record the operation
+      await this.operationTracker.recordOperation('edit', resolvedPath, {
+        oldStr: oldStr.substring(0, 100),
+        newStr: newStr.substring(0, 100),
+        replaceAll
+      });
 
       this.editHistory.push({
         command: "str_replace",
@@ -190,6 +221,25 @@ export class TextEditorTool {
   async create(filePath: string, content: string): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
+
+      // Check idempotency
+      const idempotencyCheck = await this.operationTracker.checkIdempotency(
+        'create',
+        resolvedPath,
+        content
+      );
+
+      if (idempotencyCheck.isDuplicate) {
+        return {
+          success: true,
+          output: `⚠️ Skipped duplicate operation: ${idempotencyCheck.reason}\n${idempotencyCheck.suggestion || ''}`,
+          metadata: {
+            skipped: true,
+            reason: idempotencyCheck.reason,
+            previousOperation: idempotencyCheck.previousOperation
+          }
+        };
+      }
 
       if (await pathExists(resolvedPath)) {
         return {
@@ -234,6 +284,12 @@ export class TextEditorTool {
       const dir = path.dirname(resolvedPath);
       await ops.promises.mkdir(dir, { recursive: true });
       await writeFilePromise(resolvedPath, content, "utf-8");
+
+      // Record the operation
+      await this.operationTracker.recordOperation('create', resolvedPath, {
+        contentLength: content.length,
+        lineCount: content.split('\n').length
+      });
 
       this.editHistory.push({
         command: "create",

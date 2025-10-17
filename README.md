@@ -1,3 +1,25 @@
+## 1.0.52 – Production Stability & Loop Prevention
+
+This release fixes critical production issues and adds intelligent loop detection.
+- **🔧 Fixed "Grammar is too complex" Error**: Simplified tool schemas, now works out of the box
+- **🔄 Loop Detection**: Prevents infinite operation cycles with smart duplicate detection
+- **✅ Idempotency Checks**: Skips duplicate file operations automatically
+- **🪟 Windows Command Translation**: Auto-converts Unix commands to PowerShell
+- **🎯 Core Tools Mode**: 8-10 essential tools by default (advanced tools opt-in)
+- **📦 Smaller Bundle**: 660 KB (-2.7 KB) with better performance
+- **✅ Zero Errors**: Production-ready with comprehensive testing
+
+## 1.0.51 – Windows Optimization & Performance Upgrade
+
+This release optimizes Grok CLI for Windows with major performance and reliability improvements.
+- **🪟 Windows-Native Operations**: All tools use Node.js APIs instead of Unix commands
+- **⚡ Parallel Execution**: Intelligent concurrency pool for up to 8x faster multi-file operations
+- **📊 Performance Metrics**: Complete visibility into tool latency, retries, and success rates
+- **🎯 Typed Error System**: Structured error handling with actionable suggestions
+- **🔍 Smart Ripgrep Detection**: Windows-compatible detection with graceful fallback
+- **🛡️ Enhanced Reliability**: Metrics-driven insights for continuous improvement
+- **✅ Fully Tested**: All improvements verified on Windows platform
+
 ## 1.0.50 – Autonomous Agent Upgrade
 
 This release transforms Grok CLI from a tool-using assistant into a true autonomous agent.

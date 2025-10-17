@@ -4,6 +4,8 @@ import * as ops from "fs";
 import path from "path";
 import { glob } from "glob";
 import { SymbolInfo, ImportInfo, ExportInfo, ParseError } from "./types.js";
+import { debugLog } from "../../utils/debug.js";
+
 
 // Conditional tree-sitter imports
 let Parser: any;
@@ -17,7 +19,7 @@ try {
   TypeScript = require("tree-sitter-typescript");
   Python = require("tree-sitter-python");
 } catch {
-  console.warn("Tree-sitter modules not available, using TypeScript-only parsing");
+  debugLog("Tree-sitter modules not available, using TypeScript-only parsing");
 }
 
 // ==================== Core Data Structures ====================
@@ -139,7 +141,7 @@ export class CodeIntelligenceEngine {
 
   private initializeParsers(): void {
     if (!Parser || !JavaScript || !TypeScript || !Python) {
-      console.log("Tree-sitter parsers not available, using TypeScript-only parsing");
+      debugLog("Tree-sitter parsers not available, using TypeScript-only parsing");
       return;
     }
 
@@ -167,23 +169,23 @@ export class CodeIntelligenceEngine {
       this.parsers.set('python', pyParser);
       this.parsers.set('py', pyParser);
     } catch (error) {
-      console.warn('Failed to initialize some parsers:', error);
+      debugLog('Failed to initialize some parsers:', error);
     }
   }
 
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.warn('CodeIntelligenceEngine already initialized');
+      debugLog('CodeIntelligenceEngine already initialized');
       return;
     }
 
-    console.log(`🧠 Initializing Code Intelligence Engine for: ${this.rootPath}`);
+    debugLog(`🧠 Initializing Code Intelligence Engine for: ${this.rootPath}`);
     const startTime = Date.now();
 
     try {
       // 1. Scan all source files
       const sourceFiles = await this.scanSourceFiles();
-      console.log(`   Found ${sourceFiles.length} source files`);
+      debugLog(`   Found ${sourceFiles.length} source files`);
 
       // 2. Index all files
       this.isIndexing = true;
@@ -201,8 +203,8 @@ export class CodeIntelligenceEngine {
 
       this.isInitialized = true;
       const duration = Date.now() - startTime;
-      console.log(`✅ Engine initialized in ${duration}ms`);
-      console.log(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
+      debugLog(`✅ Engine initialized in ${duration}ms`);
+      debugLog(`   Indexed ${this.statistics.indexedFiles} files, ${this.statistics.totalSymbols} symbols`);
     } catch (error) {
       console.error('Failed to initialize Code Intelligence Engine:', error);
       throw error;
@@ -237,7 +239,7 @@ export class CodeIntelligenceEngine {
       indexed += batch.length;
 
       if (indexed % 50 === 0 || indexed === total) {
-        console.log(`   Indexing progress: ${indexed}/${total}`);
+        debugLog(`   Indexing progress: ${indexed}/${total}`);
       }
     }
   }
@@ -292,7 +294,7 @@ export class CodeIntelligenceEngine {
       }
 
     } catch (error) {
-      console.warn(`Failed to index ${filePath}:`, error);
+      debugLog(`Failed to index ${filePath}:`, error);
       this.parseErrors.set(filePath, [{
         message: error instanceof Error ? error.message : String(error),
         line: 0,
@@ -943,7 +945,7 @@ export class CodeIntelligenceEngine {
   // ==================== File Watching ====================
 
   private startFileWatcher(): void {
-    console.log('   Starting file watcher...');
+    debugLog('   Starting file watcher...');
 
     this.watcher = chokidar.watch(this.filePatterns, {
       cwd: this.rootPath,
@@ -1020,7 +1022,7 @@ export class CodeIntelligenceEngine {
       // Update statistics
       this.updateStatistics();
 
-      console.log(`   Updated: ${path.relative(this.rootPath, filePath)}`);
+      debugLog(`   Updated: ${path.relative(this.rootPath, filePath)}`);
     } catch (error) {
       console.error(`Failed to update ${filePath}:`, error);
     }
@@ -1062,7 +1064,7 @@ export class CodeIntelligenceEngine {
     }
 
     this.updateStatistics();
-    console.log(`   Deleted: ${path.relative(this.rootPath, filePath)}`);
+    debugLog(`   Deleted: ${path.relative(this.rootPath, filePath)}`);
   }
 
   private rebuildSymbolCrossReference(symbolName: string, refs: SymbolReference[]): void {
@@ -1336,7 +1338,7 @@ export class CodeIntelligenceEngine {
   // ==================== Cleanup ====================
 
   dispose(): void {
-    console.log('🧠 Disposing Code Intelligence Engine');
+    debugLog('🧠 Disposing Code Intelligence Engine');
 
     if (this.watcher) {
       this.watcher.close();
@@ -1359,6 +1361,6 @@ export class CodeIntelligenceEngine {
     this.parseErrors.clear();
 
     this.isInitialized = false;
-    console.log('   Engine disposed');
+    debugLog('   Engine disposed');
   }
 }

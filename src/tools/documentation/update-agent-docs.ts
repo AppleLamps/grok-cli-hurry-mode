@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface UpdateConfig {
@@ -48,7 +47,7 @@ export class UpdateAgentDocs {
 
       // Analyze recent changes
       const analysis = await this.analyzeChanges();
-      
+
       if (analysis.filesChanged.length === 0 && analysis.gitCommits.length === 0) {
         return {
           success: true,
@@ -110,15 +109,15 @@ export class UpdateAgentDocs {
     try {
       // Get git changes since last update
       const { execSync } = require('child_process');
-      
+
       // Get recent commits (last 10)
       try {
-        const commits = execSync('git log --oneline -10', { 
-          cwd: this.config.rootPath, 
-          encoding: 'utf-8' 
+        const commits = execSync('git log --oneline -10', {
+          cwd: this.config.rootPath,
+          encoding: 'utf-8'
         });
         analysis.gitCommits = commits.trim().split('\n').filter(Boolean);
-      } catch (error) {
+      } catch {
         // Not a git repo or no commits
       }
 
@@ -129,7 +128,7 @@ export class UpdateAgentDocs {
           encoding: 'utf-8'
         });
         analysis.filesChanged = changedFiles.trim().split('\n').filter(Boolean);
-      } catch (error) {
+      } catch {
         // Use file system timestamps as fallback
         analysis.filesChanged = await this.getRecentlyModifiedFiles();
       }
@@ -140,7 +139,7 @@ export class UpdateAgentDocs {
       analysis.hasNewFeatures = this.detectNewFeatures(analysis.gitCommits);
 
       return analysis;
-    } catch (error) {
+    } catch {
       return analysis;
     }
   }
@@ -153,10 +152,10 @@ export class UpdateAgentDocs {
     const scanDir = async (dirPath: string): Promise<void> => {
       try {
         const entries = await ops.promises.readdir(dirPath, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
-          
+
           if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
             await scanDir(fullPath);
           } else if (entry.isFile()) {
@@ -166,7 +165,7 @@ export class UpdateAgentDocs {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     };
@@ -180,8 +179,8 @@ export class UpdateAgentDocs {
       'src/tools/', 'src/commands/', 'src/ui/', 'src/agent/',
       'package.json', 'tsconfig.json', 'src/index.ts'
     ];
-    
-    return filesChanged.some(file => 
+
+    return filesChanged.some(file =>
       architectureIndicators.some(indicator => file.includes(indicator))
     );
   }
@@ -191,7 +190,7 @@ export class UpdateAgentDocs {
       'package.json', 'tsconfig.json', '.grok/', 'CLAUDE.md',
       '.env', '.gitignore', 'README.md'
     ];
-    
+
     return filesChanged.some(file =>
       configFiles.some(config => file.includes(config))
     );
@@ -222,7 +221,7 @@ export class UpdateAgentDocs {
           await ops.promises.writeFile(archPath, updatedContent);
           updatedFiles.push('.agent/system/architecture.md');
         }
-      } catch (error) {
+      } catch {
         // Continue with other updates
       }
     }
@@ -233,17 +232,17 @@ export class UpdateAgentDocs {
   private async updateCriticalState(analysis: ChangeAnalysis): Promise<boolean> {
     try {
       const criticalStatePath = path.join(this.config.rootPath, '.agent', 'system', 'critical-state.md');
-      
+
       if (!existsSync(criticalStatePath)) {
         return false;
       }
 
       const content = await ops.promises.readFile(criticalStatePath, 'utf-8');
-      
+
       // Update timestamp and recent changes
       const timestamp = new Date().toISOString();
       const changesSummary = this.generateChangesSummary(analysis);
-      
+
       let updatedContent = content.replace(
         /Last Updated: .*/,
         `Last Updated: ${timestamp}`
@@ -271,7 +270,7 @@ ${changesSummary}`;
 
       await ops.promises.writeFile(criticalStatePath, updatedContent);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -279,7 +278,7 @@ ${changesSummary}`;
   private async updateArchitectureDoc(content: string, analysis: ChangeAnalysis): Promise<string> {
     // Simple update - add timestamp and recent changes note
     const timestamp = new Date().toISOString().split('T')[0];
-    
+
     return content.replace(
       /\*Updated: .*/,
       `*Updated: ${timestamp} - Recent changes detected in: ${analysis.filesChanged.slice(0, 3).join(', ')}${analysis.filesChanged.length > 3 ? '...' : ''}*`
@@ -288,7 +287,7 @@ ${changesSummary}`;
 
   private generateChangesSummary(analysis: ChangeAnalysis): string {
     const lines: string[] = [];
-    
+
     if (analysis.gitCommits.length > 0) {
       lines.push(`**Recent Commits (${analysis.gitCommits.length}):**`);
       analysis.gitCommits.slice(0, 5).forEach(commit => {
@@ -312,7 +311,7 @@ ${changesSummary}`;
     if (analysis.architectureChanges) {
       lines.push('\n**⚠️ Architecture changes detected**');
     }
-    
+
     if (analysis.configChanges) {
       lines.push('**⚙️ Configuration changes detected**');
     }

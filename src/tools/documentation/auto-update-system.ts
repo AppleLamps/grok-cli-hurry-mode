@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface AutoUpdateConfig {
@@ -64,7 +63,7 @@ export class AutoUpdateSystem {
           this.config = { ...this.config, ...settings.documentation.autoUpdate };
         }
       }
-    } catch (error) {
+    } catch {
       // Use default config
     }
   }
@@ -73,7 +72,7 @@ export class AutoUpdateSystem {
     try {
       const settingsPath = path.join(this.rootPath, '.grok', 'settings.json');
       let settings = {};
-      
+
       if (existsSync(settingsPath)) {
         settings = JSON.parse(await ops.promises.readFile(settingsPath, 'utf-8'));
       }
@@ -93,7 +92,7 @@ export class AutoUpdateSystem {
       }
 
       await ops.promises.writeFile(settingsPath, JSON.stringify(updatedSettings, null, 2));
-    } catch (error) {
+    } catch {
       // Fail silently for now
     }
   }
@@ -151,10 +150,10 @@ export class AutoUpdateSystem {
   private async checkKeyFileChanges(): Promise<boolean> {
     try {
       const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-      
+
       for (const pattern of this.config.keyFiles) {
         const files = await this.expandGlobPattern(pattern);
-        
+
         for (const file of files) {
           const fullPath = path.join(this.rootPath, file);
           if (existsSync(fullPath)) {
@@ -165,9 +164,9 @@ export class AutoUpdateSystem {
           }
         }
       }
-      
+
       return false;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -191,18 +190,18 @@ export class AutoUpdateSystem {
     const scanDir = async (dirPath: string): Promise<void> => {
       try {
         const entries = await ops.promises.readdir(dirPath, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dirPath, entry.name);
           const relativePath = path.relative(this.rootPath, fullPath);
-          
+
           if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
             await scanDir(fullPath);
           } else if (entry.isFile() && (!extension || entry.name.endsWith(`.${extension}`))) {
             files.push(relativePath);
           }
         }
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     };
@@ -227,14 +226,14 @@ export class AutoUpdateSystem {
     try {
       const { execSync } = require('child_process');
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      
+
       const commits = execSync(`git log --since="${oneHourAgo}" --oneline`, {
         cwd: this.rootPath,
         encoding: 'utf-8'
       });
 
       return commits.trim().length > 0;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -250,7 +249,7 @@ export class AutoUpdateSystem {
         // Filter to only medium/high priority or if multiple low priority
         const highPriority = triggers.filter(t => t.priority === 'high' || t.priority === 'medium');
         const lowPriority = triggers.filter(t => t.priority === 'low');
-        
+
         if (highPriority.length > 0) {
           return highPriority;
         } else if (lowPriority.length >= 2) {

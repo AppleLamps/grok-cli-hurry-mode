@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface ClaudeMdParser {
@@ -10,10 +9,10 @@ export interface ClaudeMdParser {
 }
 
 export class ClaudeMdParserImpl implements ClaudeMdParser {
-  
+
   async parseClaude(rootPath: string): Promise<{ exists: boolean; content: string; hasDocumentationSection: boolean }> {
     const claudePath = path.join(rootPath, 'CLAUDE.md');
-    
+
     if (!existsSync(claudePath)) {
       return {
         exists: false,
@@ -24,15 +23,15 @@ export class ClaudeMdParserImpl implements ClaudeMdParser {
 
     try {
       const content = await ops.promises.readFile(claudePath, 'utf-8');
-      const hasDocumentationSection = content.includes('Documentation System Workflow') || 
-                                     content.includes('.agent documentation system');
+      const hasDocumentationSection = content.includes('Documentation System Workflow') ||
+        content.includes('.agent documentation system');
 
       return {
         exists: true,
         content,
         hasDocumentationSection
       };
-    } catch (error) {
+    } catch {
       return {
         exists: false,
         content: '',
@@ -43,7 +42,7 @@ export class ClaudeMdParserImpl implements ClaudeMdParser {
 
   async updateClaude(rootPath: string, documentationSection: string): Promise<{ success: boolean; message: string }> {
     const claudePath = path.join(rootPath, 'CLAUDE.md');
-    
+
     try {
       const { exists, content, hasDocumentationSection } = await this.parseClaude(rootPath);
 
@@ -72,7 +71,7 @@ ${documentationSection}`;
 
       return {
         success: true,
-        message: exists 
+        message: exists
           ? '✅ Updated existing CLAUDE.md with documentation system instructions'
           : '✅ Created CLAUDE.md with documentation system instructions'
       };

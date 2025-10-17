@@ -17,7 +17,19 @@ export default defineConfig({
     'tree-sitter',
     'tree-sitter-javascript',
     'tree-sitter-python',
-    'tree-sitter-typescript', 'node:*', 'fs', 'fs/promises', 'path', 'url'
+    'tree-sitter-typescript',
+    // Node.js built-in modules
+    'node:*',
+    'fs',
+    'fs/promises',
+    'path',
+    'url',
+    'crypto',
+    'os',
+    'child_process',
+    'util',
+    'stream',
+    'events'
   ],
   platform: 'node',
   minify: false,

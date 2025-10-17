@@ -50,29 +50,29 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
     try {
       const apiKey = input.trim();
       const agent = new GrokAgent(apiKey);
-      
+
       // Set environment variable for current process
       process.env.GROK_API_KEY = apiKey;
-      
+
       // Save to user settings
       try {
         const manager = getSettingsManager();
         manager.updateUserSetting('apiKey', apiKey);
         console.log(`\n✅ API key saved to ~/.grok/user-settings.json`);
-      } catch (error) {
+      } catch {
         console.log('\n⚠️ Could not save API key to settings file');
         console.log('API key set for current session only');
       }
-      
+
       onApiKeySet(agent);
-    } catch (error: any) {
+    } catch {
       setError("Invalid API key format");
       setIsSubmitting(false);
     }
   };
 
-  const displayText = input.length > 0 ? 
-    (isSubmitting ? "*".repeat(input.length) : "*".repeat(input.length) + "█") : 
+  const displayText = input.length > 0 ?
+    (isSubmitting ? "*".repeat(input.length) : "*".repeat(input.length) + "█") :
     (isSubmitting ? " " : "█");
 
   return (
@@ -81,7 +81,7 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
       <Box marginBottom={1}>
         <Text color="gray">Please enter your Grok API key to continue:</Text>
       </Box>
-      
+
       <Box borderStyle="round" borderColor="blue" paddingX={1} marginBottom={1}>
         <Text color="gray">❯ </Text>
         <Text>{displayText}</Text>

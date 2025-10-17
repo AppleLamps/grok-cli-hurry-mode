@@ -103,56 +103,18 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "search",
-      description:
-        "Unified search tool for finding text content or files (similar to Cursor's search)",
+      description: "Search for text in files or find files by name",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Text to search for or file name/path pattern",
+            description: "Text to search for or file name pattern",
           },
           search_type: {
             type: "string",
             enum: ["text", "files", "both"],
-            description:
-              "Type of search: 'text' for content search, 'files' for file names, 'both' for both (default: 'both')",
-          },
-          include_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to include (e.g. '*.ts', '*.js')",
-          },
-          exclude_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to exclude (e.g. '*.log', 'node_modules')",
-          },
-          case_sensitive: {
-            type: "boolean",
-            description:
-              "Whether search should be case sensitive (default: false)",
-          },
-          whole_word: {
-            type: "boolean",
-            description: "Whether to match whole words only (default: false)",
-          },
-          regex: {
-            type: "boolean",
-            description: "Whether query is a regex pattern (default: false)",
-          },
-          max_results: {
-            type: "number",
-            description: "Maximum number of results to return (default: 50)",
-          },
-          file_types: {
-            type: "array",
-            items: { type: "string" },
-            description: "File types to search (e.g. ['js', 'ts', 'py'])",
-          },
-          include_hidden: {
-            type: "boolean",
-            description: "Whether to include hidden files (default: false)",
+            description: "Type: 'text', 'files', or 'both' (default: 'both')",
           },
         },
         required: ["query"],
@@ -163,37 +125,13 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "create_todo_list",
-      description: "Create a new todo list for planning and tracking tasks",
+      description: "Create a todo list for task planning",
       parameters: {
         type: "object",
         properties: {
           todos: {
             type: "array",
-            description: "Array of todo items",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "Description of the todo item",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item",
-                },
-              },
-              required: ["id", "content", "status", "priority"],
-            },
+            description: "Array of todo items with id, content, status, priority",
           },
         },
         required: ["todos"],
@@ -204,37 +142,13 @@ const BASE_GROK_TOOLS: GrokTool[] = [
     type: "function",
     function: {
       name: "update_todo_list",
-      description: "Update existing todos in the todo list",
+      description: "Update existing todos",
       parameters: {
         type: "object",
         properties: {
           updates: {
             type: "array",
-            description: "Array of todo updates",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "ID of the todo item to update",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "New content for the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item",
-                },
-              },
-              required: ["id"],
-            },
+            description: "Array of updates with id and new values",
           },
         },
         required: ["updates"],
@@ -580,14 +494,25 @@ const MORPH_EDIT_TOOL: GrokTool = {
 
 // Function to build tools array conditionally
 function buildGrokTools(): GrokTool[] {
-  const tools = [...BASE_GROK_TOOLS];
+  // Start with core tools only (first 10 tools)
+  const coreTools = BASE_GROK_TOOLS.slice(0, 10);
 
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
-    tools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
+    coreTools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
   }
 
-  return tools;
+  // Add advanced tools only if explicitly enabled
+  // This prevents "Grammar is too complex" errors from Grok API
+  const enableAdvancedTools = process.env.GROK_ENABLE_ADVANCED_TOOLS === '1';
+
+  if (enableAdvancedTools) {
+    // Add all advanced tools (intelligence, multi-file, etc.)
+    const advancedTools = BASE_GROK_TOOLS.slice(10);
+    return [...coreTools, ...advancedTools];
+  }
+
+  return coreTools;
 }
 
 // Export dynamic tools array

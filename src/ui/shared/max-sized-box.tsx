@@ -8,13 +8,13 @@ interface MaxSizedBoxProps {
 }
 
 export const MaxSizedBox: React.FC<MaxSizedBoxProps> = ({
-  maxHeight,
-  maxWidth,
+  maxHeight: _maxHeight,
+  maxWidth: _maxWidth,
   children,
   ...props
 }) => {
   return (
-    <Box 
+    <Box
       flexDirection="column"
       {...props}
     >

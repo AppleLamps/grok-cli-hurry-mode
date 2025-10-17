@@ -1,6 +1,5 @@
 import * as ops from 'fs-extra';
 import path from 'path';
-import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export interface PRDAnalysis {
@@ -77,14 +76,14 @@ export class SmartPRDAssistant {
     try {
       const files = await ops.promises.readdir(tasksPath);
       const prdFiles = files.filter(file => file.endsWith('.md') && !file.startsWith('example-'));
-      
+
       const newPRDs: string[] = [];
       const analysisResults: PRDAnalysis[] = [];
 
       for (const file of prdFiles) {
         const filePath = path.join(tasksPath, file);
         const stats = await ops.promises.stat(filePath);
-        
+
         // Check if file was created/modified in the last 10 minutes
         const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
         if (stats.mtime.getTime() > tenMinutesAgo) {
@@ -95,7 +94,7 @@ export class SmartPRDAssistant {
       }
 
       return { newPRDs, analysisResults };
-    } catch (error) {
+    } catch {
       return { newPRDs: [], analysisResults: [] };
     }
   }
@@ -158,7 +157,7 @@ export class SmartPRDAssistant {
         ];
       }
 
-    } catch (error) {
+    } catch {
       // Continue with empty context if loading fails
     }
 
@@ -177,8 +176,8 @@ export class SmartPRDAssistant {
     for (const line of lines) {
       const trimmed = line.trim();
       // Extract bullet points, headings, and important statements
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || 
-          trimmed.startsWith('#') || trimmed.includes('**')) {
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ') ||
+        trimmed.startsWith('#') || trimmed.includes('**')) {
         keyPoints.push(trimmed.replace(/[#*-]/g, '').trim());
       }
     }
@@ -191,7 +190,7 @@ export class SmartPRDAssistant {
 
     // Check for missing architecture context
     if (context.architecture.length > 0) {
-      const hasArchContext = context.architecture.some(arch => 
+      const hasArchContext = context.architecture.some(arch =>
         content.toLowerCase().includes(arch.toLowerCase())
       );
       if (!hasArchContext) {
@@ -273,12 +272,12 @@ export class SmartPRDAssistant {
           const taskPath = path.join(tasksPath, taskFile);
           const taskContent = await ops.promises.readFile(taskPath, 'utf-8');
           const taskWords = this.extractKeywords(taskContent);
-          
+
           const similarity = this.calculateSimilarity(contentWords, taskWords);
           if (similarity > 0.3) { // 30% similarity threshold
             similar.push(`${taskFile} (${Math.round(similarity * 100)}% similar)`);
           }
-        } catch (error) {
+        } catch {
           // Skip files we can't read
         }
       }
@@ -287,7 +286,7 @@ export class SmartPRDAssistant {
     return similar;
   }
 
-  private detectMissingContext(content: string, context: ProjectContext): string[] {
+  private detectMissingContext(content: string, _context: ProjectContext): string[] {
     const missing: string[] = [];
 
     // Check for common PRD sections
@@ -343,7 +342,7 @@ export class SmartPRDAssistant {
     const contentLower = content.toLowerCase();
     const constraintLower = constraint.toLowerCase();
 
-    return conflictKeywords.some(keyword => 
+    return conflictKeywords.some(keyword =>
       contentLower.includes(keyword) && contentLower.includes(constraintLower)
     );
   }
@@ -363,10 +362,10 @@ export class SmartPRDAssistant {
   private calculateSimilarity(words1: string[], words2: string[]): number {
     const set1 = new Set(words1);
     const set2 = new Set(words2);
-    
+
     const intersection = new Set([...set1].filter(x => set2.has(x)));
     const union = new Set([...set1, ...set2]);
-    
+
     return intersection.size / union.size;
   }
 
@@ -376,8 +375,8 @@ export class SmartPRDAssistant {
     if (analysis.suggestions.length > 0) {
       report += `💡 **Suggestions:**\n`;
       analysis.suggestions.forEach(suggestion => {
-        const priority = suggestion.priority === 'high' ? '🔴' : 
-                        suggestion.priority === 'medium' ? '🟡' : '🟢';
+        const priority = suggestion.priority === 'high' ? '🔴' :
+          suggestion.priority === 'medium' ? '🟡' : '🟢';
         report += `${priority} ${suggestion.message}`;
         if (suggestion.reference) {
           report += ` (see: ${suggestion.reference})`;

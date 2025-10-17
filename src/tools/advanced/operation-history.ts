@@ -56,11 +56,11 @@ export interface DirectorySnapshot {
   children?: string[];
 }
 
-export type OperationType = 
-  | 'file_create' 
-  | 'file_edit' 
-  | 'file_delete' 
-  | 'file_rename' 
+export type OperationType =
+  | 'file_create'
+  | 'file_edit'
+  | 'file_delete'
+  | 'file_rename'
   | 'file_move'
   | 'multi_file_edit'
   | 'refactor'
@@ -95,9 +95,9 @@ export class OperationHistoryTool {
     // History file in user's home directory
     const homeDir = process.env.HOME || process.env.USERPROFILE || '';
     this.historyFile = path.join(homeDir, '.grok', 'operation-history.json');
-    
+
     this.loadHistory();
-    
+
     if (this.options.autoCleanup) {
       this.cleanupOldEntries();
     }
@@ -116,7 +116,7 @@ export class OperationHistoryTool {
     try {
       // Create snapshots of affected files before recording
       const fileSnapshots = await this.createFileSnapshots(files);
-      
+
       const entry: HistoryEntry = {
         id: this.generateId(),
         timestamp: new Date(),
@@ -175,7 +175,7 @@ export class OperationHistoryTool {
       }
 
       const entry = this.history[this.currentPosition];
-      
+
       // Request confirmation for potentially dangerous operations
       if (this.isDangerousOperation(entry.operation)) {
         const sessionFlags = this.confirmationService.getSessionFlags();
@@ -298,15 +298,15 @@ export class OperationHistoryTool {
         const position = this.history.length - index;
         const isCurrent = position - 1 === this.currentPosition;
         const marker = isCurrent ? '→ ' : '  ';
-        
+
         output += `${marker}${position}. ${entry.description}\n`;
         output += `   ${entry.operation} | ${new Date(entry.timestamp).toLocaleString()}\n`;
         output += `   Files: ${entry.metadata.filesAffected.slice(0, 3).join(', ')}`;
-        
+
         if (entry.metadata.filesAffected.length > 3) {
           output += ` (+${entry.metadata.filesAffected.length - 3} more)`;
         }
-        
+
         output += `\n   ID: ${entry.id}\n\n`;
       }
 
@@ -342,7 +342,7 @@ export class OperationHistoryTool {
       }
 
       const targetPosition = entryIndex;
-      
+
       if (targetPosition === this.currentPosition) {
         return {
           success: true,
@@ -352,7 +352,7 @@ export class OperationHistoryTool {
 
       // Determine if we need to undo or redo operations
       const operations: string[] = [];
-      
+
       if (targetPosition < this.currentPosition) {
         // Need to undo operations
         for (let i = this.currentPosition; i > targetPosition; i--) {
@@ -445,7 +445,7 @@ export class OperationHistoryTool {
 
         if (exists) {
           const stats = await ops.promises.stat(resolvedPath);
-          
+
           if (stats.isFile() && this.shouldSnapshotFile(resolvedPath)) {
             snapshot.content = await ops.promises.readFile(resolvedPath, 'utf-8');
             snapshot.size = stats.size;
@@ -455,7 +455,7 @@ export class OperationHistoryTool {
         }
 
         snapshots.push(snapshot);
-      } catch (error) {
+      } catch {
         // If we can't snapshot a file, record it as non-existent
         snapshots.push({
           filePath: path.resolve(filePath),
@@ -515,16 +515,16 @@ export class OperationHistoryTool {
       switch (rollbackData.type) {
         case 'file_operations':
           return await this.undoFileOperations(rollbackData.files);
-        
+
         case 'multi_file':
           return await this.undoMultiFileOperation(rollbackData.files);
-        
+
         case 'refactor':
           return await this.undoRefactorOperation(rollbackData.files, rollbackData.customData);
-        
+
         case 'search_replace':
           return await this.undoSearchReplaceOperation(rollbackData.files);
-        
+
         default:
           return {
             success: false,
@@ -542,7 +542,7 @@ export class OperationHistoryTool {
   /**
    * Perform redo operation
    */
-  private async performRedo(entry: HistoryEntry): Promise<ToolResult> {
+  private async performRedo(_entry: HistoryEntry): Promise<ToolResult> {
     // For redo, we need to re-apply the changes
     // This is complex because we need to store the "forward" changes as well
     // For now, this is a simplified implementation
@@ -567,11 +567,11 @@ export class OperationHistoryTool {
           // Restore file content
           await ops.ensureDir(path.dirname(snapshot.filePath));
           await ops.promises.writeFile(snapshot.filePath, snapshot.content, 'utf-8');
-          
+
           if (snapshot.permissions) {
             await ops.promises.chmod(snapshot.filePath, parseInt(snapshot.permissions, 8));
           }
-          
+
           restored.push(`Restored: ${snapshot.filePath}`);
         } else if (!snapshot.existed && currentExists) {
           // Remove file that didn't exist before
@@ -612,7 +612,7 @@ export class OperationHistoryTool {
   /**
    * Undo refactor operation
    */
-  private async undoRefactorOperation(fileSnapshots: FileSnapshot[], customData: any): Promise<ToolResult> {
+  private async undoRefactorOperation(fileSnapshots: FileSnapshot[], _customData: any): Promise<ToolResult> {
     // Refactor operations can be more complex and might need custom undo logic
     return await this.undoFileOperations(fileSnapshots);
   }
@@ -682,7 +682,7 @@ export class OperationHistoryTool {
   /**
    * Determine operation size
    */
-  private determineOperationSize(files: string[], rollbackData: RollbackData): 'small' | 'medium' | 'large' {
+  private determineOperationSize(files: string[], _rollbackData: RollbackData): 'small' | 'medium' | 'large' {
     if (files.length <= 3) return 'small';
     if (files.length <= 10) return 'medium';
     return 'large';
@@ -704,7 +704,7 @@ export class OperationHistoryTool {
       .replace(/\*\*/g, '.*')
       .replace(/\*/g, '[^/]*')
       .replace(/\?/g, '.');
-    
+
     const regex = new RegExp(`^${regexPattern}$`, 'i');
     return regex.test(filePath);
   }
@@ -717,8 +717,8 @@ export class OperationHistoryTool {
 
     const cutoffTime = Date.now() - this.options.maxAge;
     const originalLength = this.history.length;
-    
-    this.history = this.history.filter(entry => 
+
+    this.history = this.history.filter(entry =>
       entry.timestamp.getTime() > cutoffTime
     );
 
@@ -735,15 +735,15 @@ export class OperationHistoryTool {
       if (await pathExists(this.historyFile)) {
         const data = await ops.promises.readFile(this.historyFile, 'utf-8');
         const parsed = JSON.parse(data);
-        
+
         this.history = parsed.entries.map((entry: any) => ({
           ...entry,
           timestamp: new Date(entry.timestamp)
         }));
-        
+
         this.currentPosition = parsed.currentPosition || this.history.length - 1;
       }
-    } catch (error) {
+    } catch {
       // If we can't load history, start fresh
       this.history = [];
       this.currentPosition = -1;
@@ -756,15 +756,15 @@ export class OperationHistoryTool {
   private async saveHistory(): Promise<void> {
     try {
       await ops.ensureDir(path.dirname(this.historyFile));
-      
+
       const data = {
         entries: this.history,
         currentPosition: this.currentPosition,
         lastUpdated: new Date().toISOString()
       };
-      
+
       await ops.promises.writeFile(this.historyFile, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (error) {
+    } catch {
       // Silently ignore save errors to avoid disrupting operations
     }
   }

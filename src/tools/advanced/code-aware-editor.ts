@@ -81,7 +81,7 @@ export class CodeAwareEditorTool {
   async analyzeCode(filePath: string): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -113,7 +113,7 @@ export class CodeAwareEditorTool {
   async refactor(filePath: string, operation: RefactorOperation): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -126,7 +126,7 @@ export class CodeAwareEditorTool {
       const context = await this.parseCodeContext(content, language);
 
       const result = await this.performRefactoring(content, context, operation, language);
-      
+
       if (!result.success) {
         return result;
       }
@@ -172,14 +172,14 @@ export class CodeAwareEditorTool {
    * Smart code insertion that preserves formatting and structure
    */
   async smartInsert(
-    filePath: string, 
-    code: string, 
+    filePath: string,
+    code: string,
     location: 'top' | 'bottom' | 'before_function' | 'after_function' | 'in_class',
     target?: string
   ): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -198,7 +198,7 @@ export class CodeAwareEditorTool {
 
       const formattedCode = this.formatCodeForInsertion(code, insertionPoint.indentation!, language);
       const lines = content.split('\n');
-      
+
       lines.splice(insertionPoint.line!, 0, formattedCode);
       const newContent = lines.join('\n');
 
@@ -244,7 +244,7 @@ export class CodeAwareEditorTool {
   async formatCode(filePath: string, options: { preserveComments?: boolean; indentSize?: number } = {}): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -254,7 +254,7 @@ export class CodeAwareEditorTool {
 
       const content = await ops.promises.readFile(resolvedPath, 'utf-8');
       const language = this.detectLanguage(filePath);
-      
+
       const formattedContent = await this.formatCodeContent(content, language, options);
 
       if (formattedContent === content) {
@@ -306,7 +306,7 @@ export class CodeAwareEditorTool {
   async addMissingImports(filePath: string, symbols: string[]): Promise<ToolResult> {
     try {
       const resolvedPath = path.resolve(filePath);
-      
+
       if (!(await pathExists(resolvedPath))) {
         return {
           success: false,
@@ -318,7 +318,7 @@ export class CodeAwareEditorTool {
       const language = this.detectLanguage(filePath);
       const context = await this.parseCodeContext(content, language);
 
-      const missingImports = symbols.filter(symbol => 
+      const missingImports = symbols.filter(symbol =>
         !context.imports.some(imp => imp.includes(symbol))
       );
 
@@ -380,7 +380,7 @@ export class CodeAwareEditorTool {
    */
   private detectLanguage(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
-    
+
     const languageMap: Record<string, string> = {
       '.js': 'javascript',
       '.jsx': 'javascript',
@@ -683,7 +683,7 @@ export class CodeAwareEditorTool {
   private extractParameters(line: string): string[] {
     const match = line.match(/\(([^)]*)\)/);
     if (!match || !match[1]) return [];
-    
+
     return match[1].split(',').map(param => param.trim()).filter(Boolean);
   }
 
@@ -693,7 +693,7 @@ export class CodeAwareEditorTool {
   private extractPythonParameters(line: string): string[] {
     const match = line.match(/\(([^)]*)\)/);
     if (!match || !match[1]) return [];
-    
+
     return match[1].split(',')
       .map(param => param.trim().split(':')[0].split('=')[0].trim())
       .filter(Boolean);
@@ -758,9 +758,9 @@ export class CodeAwareEditorTool {
    * Perform refactoring operation
    */
   private async performRefactoring(
-    content: string, 
-    context: CodeContext, 
-    operation: RefactorOperation, 
+    content: string,
+    context: CodeContext,
+    operation: RefactorOperation,
     language: string
   ): Promise<{ success: boolean; newContent?: string; output?: string; error?: string }> {
     const lines = content.split('\n');
@@ -787,9 +787,9 @@ export class CodeAwareEditorTool {
    * Perform rename refactoring
    */
   private performRename(
-    lines: string[], 
-    context: CodeContext, 
-    oldName: string, 
+    lines: string[],
+    context: CodeContext,
+    oldName: string,
     newName: string
   ): { success: boolean; newContent?: string; output?: string; error?: string } {
     if (!this.isValidIdentifier(newName)) {
@@ -802,7 +802,7 @@ export class CodeAwareEditorTool {
     let changes = 0;
     const newLines = lines.map(line => {
       const regex = new RegExp(`\\b${oldName}\\b`, 'g');
-      const newLine = line.replace(regex, (match) => {
+      const newLine = line.replace(regex, () => {
         changes++;
         return newName;
       });
@@ -820,10 +820,10 @@ export class CodeAwareEditorTool {
    * Perform extract function refactoring
    */
   private performExtractFunction(
-    lines: string[], 
-    startLine: number, 
-    endLine: number, 
-    functionName: string, 
+    lines: string[],
+    startLine: number,
+    endLine: number,
+    functionName: string,
     language: string
   ): { success: boolean; newContent?: string; output?: string; error?: string } {
     if (startLine < 1 || endLine > lines.length || startLine > endLine) {
@@ -873,10 +873,10 @@ export class CodeAwareEditorTool {
    * Perform extract variable refactoring
    */
   private performExtractVariable(
-    lines: string[], 
-    line: number, 
-    expression: string, 
-    variableName: string, 
+    lines: string[],
+    line: number,
+    expression: string,
+    variableName: string,
     language: string
   ): { success: boolean; newContent?: string; output?: string; error?: string } {
     if (line < 1 || line > lines.length) {
@@ -929,9 +929,9 @@ export class CodeAwareEditorTool {
    * Find insertion point for code
    */
   private findInsertionPoint(
-    content: string, 
-    context: CodeContext, 
-    location: string, 
+    content: string,
+    context: CodeContext,
+    location: string,
     target?: string
   ): { success: boolean; line?: number; indentation?: string; error?: string } {
     const lines = content.split('\n');
@@ -939,10 +939,10 @@ export class CodeAwareEditorTool {
     switch (location) {
       case 'top':
         // Insert after imports
-        const lastImportLine = Math.max(...context.imports.map(imp => 
+        const lastImportLine = Math.max(...context.imports.map(imp =>
           lines.findIndex(line => line.trim() === imp.trim())
         ).filter(idx => idx !== -1));
-        
+
         return {
           success: true,
           line: lastImportLine >= 0 ? lastImportLine + 2 : 0,
@@ -1005,7 +1005,7 @@ export class CodeAwareEditorTool {
   /**
    * Format code for insertion with proper indentation
    */
-  private formatCodeForInsertion(code: string, indentation: string, language: string): string {
+  private formatCodeForInsertion(code: string, indentation: string, _language: string): string {
     const lines = code.split('\n');
     return lines.map(line => {
       if (line.trim() === '') return '';
@@ -1017,22 +1017,22 @@ export class CodeAwareEditorTool {
    * Format code content (basic formatting)
    */
   private async formatCodeContent(
-    content: string, 
-    language: string, 
+    content: string,
+    language: string,
     options: { preserveComments?: boolean; indentSize?: number }
   ): Promise<string> {
     // This is a simplified formatter - in a real implementation,
     // you would integrate with language-specific formatters
     const indentSize = options.indentSize || 2;
     const indent = ' '.repeat(indentSize);
-    
+
     const lines = content.split('\n');
     const formatted: string[] = [];
     let currentIndent = 0;
 
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       if (trimmed === '') {
         formatted.push('');
         continue;
@@ -1061,7 +1061,7 @@ export class CodeAwareEditorTool {
 
     for (const symbol of symbols) {
       let importStatement: string;
-      
+
       switch (language) {
         case 'javascript':
         case 'typescript':
@@ -1086,7 +1086,7 @@ export class CodeAwareEditorTool {
    */
   private insertImports(content: string, imports: string[], context: CodeContext, language: string): string {
     const lines = content.split('\n');
-    
+
     // Find insertion point (after existing imports)
     let insertionPoint = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -1118,7 +1118,7 @@ export class CodeAwareEditorTool {
   private generateRefactorPreview(oldContent: string, newContent: string, operation: RefactorOperation): string {
     const oldLines = oldContent.split('\n');
     const newLines = newContent.split('\n');
-    
+
     let preview = `Refactoring Preview: ${operation.type}\n`;
     preview += `Target: ${operation.target}\n`;
     if (operation.newName) {
@@ -1141,10 +1141,9 @@ export class CodeAwareEditorTool {
   /**
    * Generate preview for insertion
    */
-  private generateInsertionPreview(oldContent: string, newContent: string, insertLine: number): string {
-    const oldLines = oldContent.split('\n');
+  private generateInsertionPreview(_oldContent: string, newContent: string, insertLine: number): string {
     const newLines = newContent.split('\n');
-    
+
     let preview = `Code Insertion Preview:\n`;
     preview += `Insertion point: Line ${insertLine + 1}\n\n`;
 
@@ -1166,7 +1165,7 @@ export class CodeAwareEditorTool {
   private generateFormatPreview(oldContent: string, newContent: string): string {
     const oldLines = oldContent.split('\n');
     const newLines = newContent.split('\n');
-    
+
     let preview = 'Formatting Preview:\n\n';
     let changes = 0;
 

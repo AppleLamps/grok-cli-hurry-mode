@@ -32,7 +32,7 @@ import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { TaskOrchestrator, OrchestratorResult } from "../planning/task-orchestrator.js";
-import { PlanExecutionProgress } from "../planning/types.js";
+import { PlanExecutionProgress, TaskPlan } from "../planning/types.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -97,6 +97,14 @@ export class GrokAgent extends EventEmitter {
   private toolRetryCount: Map<string, number> = new Map();
   private readonly maxRetries: number = 3;
   private fallbackStrategies: Map<string, FallbackStrategy>;
+  // Correction attempt tracking for LLM re-engagement
+  private correctionAttempts: Map<string, Array<{
+    tool: string;
+    error: string;
+    timestamp: number;
+    fallbackStrategy: string;
+  }>> = new Map();
+  private readonly maxCorrectionAttempts: number = 3;
 
   constructor(
     apiKey: string,
@@ -544,6 +552,68 @@ Current working directory: ${process.cwd()}`,
     let lastTokenUpdate = 0;
 
     try {
+      // PHASE 1: Plan Detection - Check if this request warrants automatic planning
+      const shouldPlan = this.shouldCreatePlan(message);
+      if (shouldPlan && !this.planExecutionInProgress) {
+        try {
+          yield {
+            type: "content",
+            content: "\n📋 Analyzing request complexity... Generating task plan...\n\n"
+          };
+
+          const planResult = await this.generateAndConfirmPlan(message);
+
+          if (planResult.approved && planResult.plan) {
+            yield {
+              type: "content",
+              content: "✅ Plan approved. Executing steps...\n\n"
+            };
+
+            // Execute plan steps
+            this.planExecutionInProgress = true;
+            const executionResults = await this.executePlanSteps(planResult.plan);
+            this.planExecutionInProgress = false;
+
+            // Report results
+            const successCount = executionResults.filter(r => r.success).length;
+            const failCount = executionResults.filter(r => !r.success).length;
+
+            yield {
+              type: "content",
+              content: `\n✅ Plan execution complete!\n` +
+                `   Successful steps: ${successCount}\n` +
+                `   Failed steps: ${failCount}\n\n`
+            };
+
+            // Add final response to conversation
+            const finalEntry: ChatEntry = {
+              type: "assistant",
+              content: `Plan executed with ${successCount} successful steps and ${failCount} failed steps.`,
+              timestamp: new Date(),
+            };
+            this.chatHistory.push(finalEntry);
+            this.messages.push({
+              role: "assistant",
+              content: finalEntry.content,
+            });
+
+            yield { type: "done" };
+            return;
+          } else {
+            yield {
+              type: "content",
+              content: "Plan rejected. Proceeding with standard agent loop...\n\n"
+            };
+          }
+        } catch (error: any) {
+          console.warn('Plan generation/execution failed, continuing with standard loop:', error);
+          yield {
+            type: "content",
+            content: `⚠️ Plan generation failed: ${error.message}\nProceeding with standard approach...\n\n`
+          };
+        }
+      }
+
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         // Check if operation was cancelled
@@ -681,6 +751,33 @@ Current working directory: ${process.cwd()}`,
 
               const result = await this.executeTool(toolCall);
 
+              // PHASE 3: Check for self-correction signal
+              let correctionInfo = null;
+              if (!result.success && result.error?.includes('SELF_CORRECT_ATTEMPT')) {
+                const correctionResult = this.handleSelfCorrectAttempt(result, toolCall, message);
+
+                if (correctionResult.shouldRetry && correctionResult.fallbackRequest) {
+                  // Add fallback request to conversation for LLM re-engagement
+                  this.messages.push({
+                    role: "user",
+                    content: `Previous approach failed. ${correctionResult.fallbackRequest}\n\nPlease try again with the suggested approach.`
+                  });
+
+                  // Mark for correction notification
+                  correctionInfo = { type: 'retry', message: correctionResult.fallbackRequest };
+
+                  // Don't add the error to chat history, let the retry happen
+                  return {
+                    toolCall,
+                    result: { success: true, output: 'Retrying with fallback strategy' },
+                    entry: null,
+                    correctionInfo
+                  };
+                } else {
+                  correctionInfo = { type: 'exhausted' };
+                }
+              }
+
               const toolResultEntry: ChatEntry = {
                 type: "tool_result",
                 content: result.success
@@ -701,7 +798,7 @@ Current working directory: ${process.cwd()}`,
                 tool_call_id: toolCall.id,
               });
 
-              return { toolCall, result, entry: toolResultEntry };
+              return { toolCall, result, entry: toolResultEntry, correctionInfo };
             });
 
             const batchResults = await Promise.all(batchPromises);
@@ -716,12 +813,29 @@ Current working directory: ${process.cwd()}`,
             }
 
             // Yield results after batch completes
-            for (const { toolCall, result } of batchResults) {
-              yield {
-                type: "tool_result",
-                toolCall,
-                toolResult: result,
-              };
+            for (const batchResult of batchResults) {
+              // Handle correction notifications
+              if (batchResult && batchResult.correctionInfo) {
+                if (batchResult.correctionInfo.type === 'retry') {
+                  yield {
+                    type: "content",
+                    content: `\n🔄 Self-correction triggered. Retrying with alternative approach...\n\n`
+                  };
+                } else if (batchResult.correctionInfo.type === 'exhausted') {
+                  yield {
+                    type: "content",
+                    content: `\n❌ Self-correction attempts exhausted. Please try a different approach.\n\n`
+                  };
+                }
+              }
+
+              if (batchResult && batchResult.entry) {
+                yield {
+                  type: "tool_result",
+                  toolCall: batchResult.toolCall,
+                  toolResult: batchResult.result,
+                };
+              }
             }
           }
 
@@ -790,45 +904,129 @@ Current working directory: ${process.cwd()}`,
               args.start_line && args.end_line
                 ? [args.start_line, args.end_line]
                 : undefined;
-            return await this.textEditor.view(args.path, range);
-          } catch (error: any) {
-            console.warn(`view_file tool failed, falling back to bash: ${error.message}`);
-            // Fallback to bash cat/head/tail
-            const path = args.path;
-            let command = `cat "${path}"`;
-            if (args.start_line && args.end_line) {
-              command = `sed -n '${args.start_line},${args.end_line}p' "${path}"`;
+            const result = await this.textEditor.view(args.path, range);
+
+            // If file not found, provide helpful error
+            if (!result.success && result.error?.includes('not found')) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: File not found: ${args.path}. ` +
+                  `Please verify the file path is correct. Try one of these:\n` +
+                  `1. Use 'search' to find the file in the project\n` +
+                  `2. Check if the file was moved or renamed\n` +
+                  `3. Verify you're in the correct directory\n` +
+                  `4. Use 'bash' with 'find' or 'ls' to locate the file`,
+                metadata: {
+                  originalTool: 'view_file',
+                  originalError: result.error,
+                  suggestedApproach: 'search_for_file',
+                  fallbackTools: ['search', 'bash']
+                }
+              };
             }
-            return await this.bash.execute(command);
+
+            return result;
+          } catch (error: any) {
+            console.warn(`view_file tool failed: ${error.message}`);
+
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: Failed to view file: ${error.message}. ` +
+                `Please verify the file exists and is accessible.`,
+              metadata: {
+                originalTool: 'view_file',
+                originalError: error.message,
+                suggestedApproach: 'verify_file_exists',
+                fallbackTools: ['bash', 'search']
+              }
+            };
           }
 
         case "create_file":
           try {
-            return await this.textEditor.create(args.path, args.content);
+            const result = await this.textEditor.create(args.path, args.content);
+
+            // If file already exists, provide helpful error
+            if (!result.success && result.error?.includes('already exists')) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: File already exists: ${args.path}. ` +
+                  `Please try one of these approaches:\n` +
+                  `1. Use 'view_file' to see the current content\n` +
+                  `2. Use 'str_replace_editor' to modify the existing file\n` +
+                  `3. Choose a different file name\n` +
+                  `4. Delete the existing file first if you want to replace it`,
+                metadata: {
+                  originalTool: 'create_file',
+                  originalError: result.error,
+                  suggestedApproach: 'view_then_edit',
+                  fallbackTools: ['view_file', 'str_replace_editor']
+                }
+              };
+            }
+
+            return result;
           } catch (error: any) {
-            console.warn(`create_file tool failed, falling back to bash: ${error.message}`);
-            // Fallback to bash echo/redirect
-            const command = `cat > "${args.path}" << 'EOF'\n${args.content}\nEOF`;
-            return await this.bash.execute(command);
+            console.warn(`create_file tool failed: ${error.message}`);
+
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: Failed to create file: ${error.message}. ` +
+                `Please verify the directory exists and you have write permissions.`,
+              metadata: {
+                originalTool: 'create_file',
+                originalError: error.message,
+                suggestedApproach: 'verify_directory',
+                fallbackTools: ['bash']
+              }
+            };
           }
 
         case "str_replace_editor":
           try {
-            return await this.textEditor.strReplace(
+            const result = await this.textEditor.strReplace(
               args.path,
               args.old_str,
               args.new_str,
               args.replace_all
             );
+
+            // Check if string not found - trigger self-correction
+            if (!result.success && result.error?.includes('String not found')) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: The exact string was not found in the file. ` +
+                  `This often happens due to whitespace differences or formatting. ` +
+                  `Please try one of these approaches:\n` +
+                  `1. Use 'view_file' to see the exact current content first\n` +
+                  `2. Use 'multi_file_edit' with line-based operations instead\n` +
+                  `3. Use 'code_analysis' to analyze the file structure first\n` +
+                  `4. Break the edit into smaller, more specific single-line changes`,
+                metadata: {
+                  originalTool: 'str_replace_editor',
+                  originalError: result.error,
+                  suggestedApproach: 'view_file_then_retry',
+                  fallbackTools: ['view_file', 'multi_file_edit', 'code_analysis']
+                }
+              };
+            }
+
+            return result;
           } catch (error: any) {
-            console.warn(`str_replace_editor tool failed, falling back to bash: ${error.message}`);
-            // Fallback to bash sed for replacement
-            const escapedOld = args.old_str.replace(/[\/&]/g, '\\$&');
-            const escapedNew = args.new_str.replace(/[\/&]/g, '\\$&');
-            const sedCommand = args.replace_all
-              ? `sed -i 's/${escapedOld}/${escapedNew}/g' "${args.path}"`
-              : `sed -i '0,/${escapedOld}/s/${escapedOld}/${escapedNew}/' "${args.path}"`;
-            return await this.bash.execute(sedCommand);
+            console.warn(`str_replace_editor tool failed: ${error.message}`);
+
+            // Return self-correction signal instead of bash fallback
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: File operation failed: ${error.message}. ` +
+                `Please use 'view_file' to check the current state and try again with the exact content.`,
+              metadata: {
+                originalTool: 'str_replace_editor',
+                originalError: error.message,
+                suggestedApproach: 'view_file_then_retry',
+                fallbackTools: ['view_file', 'multi_file_edit']
+              }
+            };
           }
 
         case "edit_file":
@@ -972,9 +1170,22 @@ Current working directory: ${process.cwd()}`,
           try {
             return await this.refactoringAssistant.execute(args);
           } catch (error: any) {
-            // Self-correction: Refactoring failed, try fallback strategy
-            console.warn(`refactoring_assistant failed: ${error.message}. Attempting fallback...`);
-            return await this.attemptFallback(toolCall, error);
+            // PHASE 3: Return SELF_CORRECT_ATTEMPT signal for LLM re-engagement
+            console.warn(`refactoring_assistant failed: ${error.message}`);
+
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: The refactoring operation failed with error: "${error.message}". ` +
+                `Please generate a new plan using the 'multi_file_edit' tool for more direct text manipulation ` +
+                `across multiple files. Break down the refactoring into smaller, explicit file edits with ` +
+                `specific line ranges and content replacements.`,
+              metadata: {
+                originalTool: 'refactoring_assistant',
+                originalError: error.message,
+                suggestedApproach: 'multi_file_edit',
+                fallbackTools: ['multi_file_edit', 'code_analysis', 'str_replace_editor']
+              }
+            } as any;
           }
 
         case "task_planner":
@@ -1502,5 +1713,183 @@ Current working directory: ${process.cwd()}`,
         error: `Bash fallback failed: ${error.message}`
       };
     }
+  }
+
+  /**
+   * PHASE 1: Plan Detection
+   * Determine if a user request warrants automatic task planning
+   */
+  private shouldCreatePlan(message: string): boolean {
+    const lowerMsg = message.toLowerCase();
+
+    // Complexity keywords
+    const complexKeywords = [
+      'refactor', 'move', 'extract', 'implement', 'restructure',
+      'redesign', 'reorganize', 'migrate', 'convert', 'transform'
+    ];
+
+    // Check for keywords
+    let complexityScore = 0;
+    if (complexKeywords.some(kw => lowerMsg.includes(kw))) {
+      complexityScore += 2;
+    }
+
+    // Check for multiple file mentions
+    const fileMatches = message.match(/\b[\w\-./]+\.(ts|tsx|js|jsx|py|java|go|rs|cpp|c|h)\b/g);
+    if (fileMatches && fileMatches.length > 1) {
+      complexityScore += 2;
+    }
+
+    // Check for architecture/design patterns
+    const architectureKeywords = ['architecture', 'design', 'pattern', 'dependency', 'module'];
+    if (architectureKeywords.some(kw => lowerMsg.includes(kw))) {
+      complexityScore += 1;
+    }
+
+    // Check for scope indicators
+    if (lowerMsg.includes('across') || lowerMsg.includes('throughout')) {
+      complexityScore += 1;
+    }
+
+    return complexityScore >= 3;
+  }
+
+  /**
+   * PHASE 2: Confirmation & Execution
+   * Generate plan and request user confirmation
+   */
+  private async generateAndConfirmPlan(
+    userRequest: string
+  ): Promise<{ approved: boolean; plan?: TaskPlan }> {
+    try {
+      const { plan, validation } = await this.taskOrchestrator.createPlan(
+        userRequest,
+        { currentDirectory: this.getCurrentDirectory() }
+      );
+
+      const preview = this.taskOrchestrator.formatPlanPreview(plan, validation);
+
+      const confirmResult = await this.confirmationTool.requestConfirmation({
+        operation: 'Execute Task Plan',
+        filename: `${plan.steps.length} steps affecting ${plan.metadata.filesAffected.length} files`,
+        description: `${plan.description}\n\n${preview}`,
+        showVSCodeOpen: false,
+        autoAccept: false
+      });
+
+      return {
+        approved: confirmResult.success,
+        plan: confirmResult.success ? plan : undefined
+      };
+    } catch (error: any) {
+      console.error('Plan generation error:', error);
+      return { approved: false };
+    }
+  }
+
+  /**
+   * PHASE 2: Sequential Plan Execution
+   * Execute plan steps sequentially with dependency handling
+   */
+  private async executePlanSteps(plan: TaskPlan): Promise<any[]> {
+    const results: any[] = [];
+
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+
+      // Check dependencies
+      if (step.dependencies.length > 0) {
+        const depsCompleted = step.dependencies.every(depId =>
+          plan.steps.find(s => s.id === depId)?.status === 'completed'
+        );
+        if (!depsCompleted) {
+          step.status = 'skipped';
+          continue;
+        }
+      }
+
+      step.status = 'running';
+      step.startTime = Date.now();
+
+      try {
+        // Create tool call from step
+        const toolCall: GrokToolCall = {
+          id: step.id,
+          type: 'function',
+          function: {
+            name: step.tool,
+            arguments: JSON.stringify(step.args)
+          }
+        };
+
+        const result = await this.executeTool(toolCall);
+
+        if (result.success) {
+          step.status = 'completed';
+          step.result = result;
+          results.push({ stepId: step.id, success: true, result });
+        } else {
+          throw new Error(result.error || 'Tool execution failed');
+        }
+      } catch (error: any) {
+        step.status = 'failed';
+        step.error = error.message;
+        results.push({ stepId: step.id, success: false, error: error.message });
+
+        if (this.taskOrchestrator['config'].autoRollbackOnFailure) {
+          console.warn('Auto-rollback triggered');
+          break;
+        }
+      }
+
+      step.endTime = Date.now();
+    }
+
+    return results;
+  }
+
+  /**
+   * PHASE 3: LLM Re-engagement
+   * Handle self-correction attempts by re-engaging the LLM
+   */
+  private handleSelfCorrectAttempt(
+    toolResult: ToolResult,
+    toolCall: GrokToolCall,
+    userRequest: string
+  ): { shouldRetry: boolean; fallbackRequest?: string } {
+    const correctionKey = this.hashRequest(userRequest);
+    const attempts = this.correctionAttempts.get(correctionKey) || [];
+
+    if (attempts.length >= this.maxCorrectionAttempts) {
+      return { shouldRetry: false };
+    }
+
+    // Extract fallback request from error message
+    const fallbackMatch = toolResult.error?.match(/SELF_CORRECT_ATTEMPT: (.+?)(?:\n|$)/s);
+    const fallbackRequest = fallbackMatch ? fallbackMatch[1] : toolResult.error;
+
+    // Track attempt
+    attempts.push({
+      tool: toolCall.function.name,
+      error: toolResult.error || 'Unknown error',
+      timestamp: Date.now(),
+      fallbackStrategy: 'decompose_and_retry'
+    });
+    this.correctionAttempts.set(correctionKey, attempts);
+
+    console.log(`🔄 Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
+
+    return {
+      shouldRetry: true,
+      fallbackRequest: fallbackRequest || undefined
+    };
+  }
+
+  /**
+   * Hash a request for tracking correction attempts
+   */
+  private hashRequest(request: string): string {
+    const crypto = require('crypto');
+    return crypto.createHash('md5').update(request).digest('hex');
   }
 }

@@ -53,7 +53,7 @@ export class MultiFileEditorTool {
   async beginTransaction(description?: string): Promise<ToolResult> {
     try {
       const transactionId = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       const transaction: MultiFileTransaction = {
         id: transactionId,
         timestamp: new Date(),
@@ -147,7 +147,7 @@ export class MultiFileEditorTool {
 
       for (const [index, op] of transaction.operations.entries()) {
         preview += `${index + 1}. ${op.type.toUpperCase()}: ${op.filePath}\n`;
-        
+
         switch (op.type) {
           case 'create':
             preview += `   → Create new file with ${op.content?.split('\n').length || 0} lines\n`;
@@ -239,7 +239,7 @@ export class MultiFileEditorTool {
 
       // Execute operations
       const results: string[] = [];
-      
+
       for (const [index, op] of transaction.operations.entries()) {
         try {
           const rollbackInfo = await this.createRollbackInfo(op);
@@ -249,18 +249,52 @@ export class MultiFileEditorTool {
           if (!result.success) {
             // Rollback already executed operations
             await this.rollbackOperations(rollbackData.slice(0, index));
+
+            // Return SELF_CORRECT_ATTEMPT signal for better error recovery
             return {
               success: false,
-              error: `Operation ${index + 1} failed: ${result.error}`
+              error: `SELF_CORRECT_ATTEMPT: Multi-file operation ${index + 1} of ${transaction.operations.length} failed: ${result.error}. ` +
+                `The transaction has been rolled back. Please try one of these approaches:\n` +
+                `1. Use 'view_file' to check the current state of ${op.filePath}\n` +
+                `2. Break down the operation into smaller, individual file edits\n` +
+                `3. Use 'code_analysis' to verify the file structure first\n` +
+                `4. Try the operations one at a time instead of in a transaction`,
+              metadata: {
+                originalTool: 'multi_file_edit',
+                failedOperation: index + 1,
+                totalOperations: transaction.operations.length,
+                failedFile: op.filePath,
+                operationType: op.type,
+                originalError: result.error,
+                suggestedApproach: 'sequential_individual_edits',
+                fallbackTools: ['view_file', 'str_replace_editor', 'code_analysis']
+              }
             };
           }
           results.push(`✓ ${op.type}: ${op.filePath}`);
         } catch (error: any) {
           // Rollback already executed operations
           await this.rollbackOperations(rollbackData.slice(0, index));
+
+          // Return SELF_CORRECT_ATTEMPT signal
           return {
             success: false,
-            error: `Operation ${index + 1} failed: ${error.message}`
+            error: `SELF_CORRECT_ATTEMPT: Multi-file operation ${index + 1} of ${transaction.operations.length} threw an error: ${error.message}. ` +
+              `The transaction has been rolled back. Please try one of these approaches:\n` +
+              `1. Use 'view_file' to check the current state of ${op.filePath}\n` +
+              `2. Verify the file exists and is accessible\n` +
+              `3. Break down into smaller operations\n` +
+              `4. Use 'code_analysis' to understand the file structure`,
+            metadata: {
+              originalTool: 'multi_file_edit',
+              failedOperation: index + 1,
+              totalOperations: transaction.operations.length,
+              failedFile: op.filePath,
+              operationType: op.type,
+              originalError: error.message,
+              suggestedApproach: 'verify_then_retry',
+              fallbackTools: ['view_file', 'code_analysis', 'str_replace_editor']
+            }
           };
         }
       }
@@ -480,11 +514,11 @@ export class MultiFileEditorTool {
 
       case 'edit':
         let content = await ops.promises.readFile(resolvedPath, 'utf-8');
-        
+
         for (const editOp of operation.operations!) {
           content = await this.applyEditOperation(content, editOp);
         }
-        
+
         await writeFilePromise(resolvedPath, content, 'utf-8');
         return { success: true, output: `Edited ${operation.filePath}` };
 
@@ -544,7 +578,7 @@ export class MultiFileEditorTool {
     // Rollback in reverse order
     for (let i = rollbackData.length - 1; i >= 0; i--) {
       const rollback = rollbackData[i];
-      
+
       switch (rollback.type) {
         case 'delete_created':
           const createdPath = path.resolve(rollback.filePath);

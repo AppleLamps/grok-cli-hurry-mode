@@ -115,22 +115,25 @@ export class TextEditorTool {
           } else {
             return {
               success: false,
-              error: `String not found in file. For multi-line replacements, consider using line-based editing.`,
+              error: `String not found in file. The exact multi-line text was not found. ` +
+                `This is often due to whitespace differences (spaces vs tabs, line endings). ` +
+                `Searched for:\n${oldStr.substring(0, 200)}${oldStr.length > 200 ? '...' : ''}`,
             };
           }
         } else {
           return {
             success: false,
-            error: `String not found in file: "${oldStr}"`,
+            error: `String not found in file: "${oldStr.substring(0, 100)}${oldStr.length > 100 ? '...' : ''}". ` +
+              `Please verify the exact text exists in the file.`,
           };
         }
       }
 
       const occurrences = (content.match(new RegExp(oldStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-      
+
       const sessionFlags = this.confirmationService.getSessionFlags();
       if (!sessionFlags.fileOperations && !sessionFlags.allOperations) {
-        const previewContent = replaceAll 
+        const previewContent = replaceAll
           ? content.split(oldStr).join(newStr)
           : content.replace(oldStr, newStr);
         const oldLines = content.split("\n");
@@ -273,14 +276,14 @@ export class TextEditorTool {
 
       const fileContent = await ops.promises.readFile(resolvedPath, "utf-8");
       const lines = fileContent.split("\n");
-      
+
       if (startLine < 1 || startLine > lines.length) {
         return {
           success: false,
           error: `Invalid start line: ${startLine}. File has ${lines.length} lines.`,
         };
       }
-      
+
       if (endLine < startLine || endLine > lines.length) {
         return {
           success: false,
@@ -293,7 +296,7 @@ export class TextEditorTool {
         const newLines = [...lines];
         const replacementLines = newContent.split("\n");
         newLines.splice(startLine - 1, endLine - startLine + 1, ...replacementLines);
-        
+
         const diffContent = this.generateDiff(lines, newLines, filePath);
 
         const confirmationResult =
@@ -437,12 +440,58 @@ export class TextEditorTool {
   }
 
   private findFuzzyMatch(content: string, searchStr: string): string | null {
+    // Try multiple matching strategies in order of specificity
+
+    // Strategy 1: Normalized whitespace match (most common case)
+    const normalizedMatch = this.findNormalizedMatch(content, searchStr);
+    if (normalizedMatch) return normalizedMatch;
+
+    // Strategy 2: Function declarations
+    const functionMatch = this.findFunctionMatch(content, searchStr);
+    if (functionMatch) return functionMatch;
+
+    // Strategy 3: Import statements
+    const importMatch = this.findImportMatch(content, searchStr);
+    if (importMatch) return importMatch;
+
+    // Strategy 4: Const/let/var declarations
+    const declarationMatch = this.findDeclarationMatch(content, searchStr);
+    if (declarationMatch) return declarationMatch;
+
+    // Strategy 5: Class methods and arrow functions
+    const methodMatch = this.findMethodMatch(content, searchStr);
+    if (methodMatch) return methodMatch;
+
+    return null;
+  }
+
+  private findNormalizedMatch(content: string, searchStr: string): string | null {
+    // Find text that matches when whitespace is normalized
+    const searchNormalized = this.normalizeForComparison(searchStr);
+    const searchLines = searchStr.split('\n');
+    const contentLines = content.split('\n');
+
+    // Try to find a sequence of lines that match when normalized
+    for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
+      const candidateLines = contentLines.slice(i, i + searchLines.length);
+      const candidate = candidateLines.join('\n');
+      const candidateNormalized = this.normalizeForComparison(candidate);
+
+      if (candidateNormalized === searchNormalized) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private findFunctionMatch(content: string, searchStr: string): string | null {
     const functionMatch = searchStr.match(/function\s+(\w+)/);
     if (!functionMatch) return null;
-    
+
     const functionName = functionMatch[1];
     const contentLines = content.split('\n');
-    
+
     let functionStart = -1;
     for (let i = 0; i < contentLines.length; i++) {
       if (contentLines[i].includes(`function ${functionName}`) && contentLines[i].includes('{')) {
@@ -450,62 +499,134 @@ export class TextEditorTool {
         break;
       }
     }
-    
+
     if (functionStart === -1) return null;
-    
+
     let braceCount = 0;
     let functionEnd = functionStart;
-    
+
     for (let i = functionStart; i < contentLines.length; i++) {
       const line = contentLines[i];
       for (const char of line) {
         if (char === '{') braceCount++;
         if (char === '}') braceCount--;
       }
-      
+
       if (braceCount === 0 && i > functionStart) {
         functionEnd = i;
         break;
       }
     }
-    
+
     const actualFunction = contentLines.slice(functionStart, functionEnd + 1).join('\n');
-    
+
     const searchNormalized = this.normalizeForComparison(searchStr);
     const actualNormalized = this.normalizeForComparison(actualFunction);
-    
+
     if (this.isSimilarStructure(searchNormalized, actualNormalized)) {
       return actualFunction;
     }
-    
+
     return null;
   }
-  
+
+  private findImportMatch(content: string, searchStr: string): string | null {
+    // Match import statements with whitespace tolerance
+    const importMatch = searchStr.match(/import\s+.*\s+from\s+['"](.+)['"]/);
+    if (!importMatch) return null;
+
+    const moduleName = importMatch[1];
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      if (line.includes('import') && line.includes(moduleName)) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(line);
+
+        if (normalized1 === normalized2) {
+          return line;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private findDeclarationMatch(content: string, searchStr: string): string | null {
+    // Match const/let/var declarations
+    const declMatch = searchStr.match(/(const|let|var)\s+(\w+)/);
+    if (!declMatch) return null;
+
+    const varName = declMatch[2];
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      if (line.includes(varName) && (line.includes('const') || line.includes('let') || line.includes('var'))) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(line);
+
+        if (normalized1 === normalized2) {
+          return line;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private findMethodMatch(content: string, searchStr: string): string | null {
+    // Match class methods and arrow functions
+    const methodMatch = searchStr.match(/(\w+)\s*[=:]\s*\(/);
+    if (!methodMatch) return null;
+
+    const methodName = methodMatch[1];
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(methodName)) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(lines[i]);
+
+        if (normalized1 === normalized2) {
+          return lines[i];
+        }
+      }
+    }
+
+    return null;
+  }
+
   private normalizeForComparison(str: string): string {
     return str
-      .replace(/["'`]/g, '"')
-      .replace(/\s+/g, ' ')
-      .replace(/{\s+/g, '{ ')
+      .replace(/\r\n/g, '\n')      // Normalize Windows line endings
+      .replace(/\r/g, '\n')        // Normalize old Mac line endings
+      .replace(/\t/g, '  ')        // Convert tabs to spaces
+      .replace(/["'`]/g, '"')      // Normalize quotes
+      .replace(/\s+/g, ' ')        // Collapse whitespace
+      .replace(/{\s+/g, '{ ')      // Normalize braces
       .replace(/\s+}/g, ' }')
-      .replace(/;\s*/g, ';')
+      .replace(/;\s*/g, ';')       // Normalize semicolons
+      .replace(/,\s*/g, ', ')      // Normalize commas
+      .replace(/\(\s+/g, '(')      // Normalize parentheses
+      .replace(/\s+\)/g, ')')
       .trim();
   }
-  
+
   private isSimilarStructure(search: string, actual: string): boolean {
     const extractTokens = (str: string) => {
       const tokens = str.match(/\b(function|console\.log|return|if|else|for|while)\b/g) || [];
       return tokens;
     };
-    
+
     const searchTokens = extractTokens(search);
     const actualTokens = extractTokens(actual);
-    
+
     if (searchTokens.length !== actualTokens.length) return false;
-    
+
     for (let i = 0; i < searchTokens.length; i++) {
       if (searchTokens[i] !== actualTokens[i]) return false;
     }
-    
+
     return true;
   }
 
@@ -515,66 +636,66 @@ export class TextEditorTool {
     filePath: string
   ): string {
     const CONTEXT_LINES = 3;
-    
+
     const changes: Array<{
       oldStart: number;
       oldEnd: number;
       newStart: number;
       newEnd: number;
     }> = [];
-    
+
     let i = 0, j = 0;
-    
+
     while (i < oldLines.length || j < newLines.length) {
       while (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
         i++;
         j++;
       }
-      
+
       if (i < oldLines.length || j < newLines.length) {
         const changeStart = { old: i, new: j };
-        
+
         let oldEnd = i;
         let newEnd = j;
-        
+
         while (oldEnd < oldLines.length || newEnd < newLines.length) {
           let matchFound = false;
           let matchLength = 0;
-          
+
           for (let k = 0; k < Math.min(2, oldLines.length - oldEnd, newLines.length - newEnd); k++) {
-            if (oldEnd + k < oldLines.length && 
-                newEnd + k < newLines.length && 
-                oldLines[oldEnd + k] === newLines[newEnd + k]) {
+            if (oldEnd + k < oldLines.length &&
+              newEnd + k < newLines.length &&
+              oldLines[oldEnd + k] === newLines[newEnd + k]) {
               matchLength++;
             } else {
               break;
             }
           }
-          
+
           if (matchLength >= 2 || (oldEnd >= oldLines.length && newEnd >= newLines.length)) {
             matchFound = true;
           }
-          
+
           if (matchFound) {
             break;
           }
-          
+
           if (oldEnd < oldLines.length) oldEnd++;
           if (newEnd < newLines.length) newEnd++;
         }
-        
+
         changes.push({
           oldStart: changeStart.old,
           oldEnd: oldEnd,
           newStart: changeStart.new,
           newEnd: newEnd
         });
-        
+
         i = oldEnd;
         j = newEnd;
       }
     }
-    
+
     const hunks: Array<{
       oldStart: number;
       oldCount: number;
@@ -582,45 +703,45 @@ export class TextEditorTool {
       newCount: number;
       lines: Array<{ type: '+' | '-' | ' '; content: string }>;
     }> = [];
-    
+
     let accumulatedOffset = 0;
-    
+
     for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
       const change = changes[changeIdx];
-      
+
       let contextStart = Math.max(0, change.oldStart - CONTEXT_LINES);
       let contextEnd = Math.min(oldLines.length, change.oldEnd + CONTEXT_LINES);
-      
+
       if (hunks.length > 0) {
         const lastHunk = hunks[hunks.length - 1];
         const lastHunkEnd = lastHunk.oldStart + lastHunk.oldCount;
-        
+
         if (lastHunkEnd >= contextStart) {
           const oldHunkEnd = lastHunk.oldStart + lastHunk.oldCount;
           const newContextEnd = Math.min(oldLines.length, change.oldEnd + CONTEXT_LINES);
-          
+
           for (let idx = oldHunkEnd; idx < change.oldStart; idx++) {
             lastHunk.lines.push({ type: ' ', content: oldLines[idx] });
           }
-          
+
           for (let idx = change.oldStart; idx < change.oldEnd; idx++) {
             lastHunk.lines.push({ type: '-', content: oldLines[idx] });
           }
           for (let idx = change.newStart; idx < change.newEnd; idx++) {
             lastHunk.lines.push({ type: '+', content: newLines[idx] });
           }
-          
+
           for (let idx = change.oldEnd; idx < newContextEnd && idx < oldLines.length; idx++) {
             lastHunk.lines.push({ type: ' ', content: oldLines[idx] });
           }
-          
+
           lastHunk.oldCount = newContextEnd - lastHunk.oldStart;
           lastHunk.newCount = lastHunk.oldCount + (change.newEnd - change.newStart) - (change.oldEnd - change.oldStart);
-          
+
           continue;
         }
       }
-      
+
       const hunk: typeof hunks[0] = {
         oldStart: contextStart + 1,
         oldCount: contextEnd - contextStart,
@@ -628,65 +749,63 @@ export class TextEditorTool {
         newCount: contextEnd - contextStart + (change.newEnd - change.newStart) - (change.oldEnd - change.oldStart),
         lines: []
       };
-      
+
       for (let idx = contextStart; idx < change.oldStart; idx++) {
         hunk.lines.push({ type: ' ', content: oldLines[idx] });
       }
-      
+
       for (let idx = change.oldStart; idx < change.oldEnd; idx++) {
         hunk.lines.push({ type: '-', content: oldLines[idx] });
       }
-      
+
       for (let idx = change.newStart; idx < change.newEnd; idx++) {
         hunk.lines.push({ type: '+', content: newLines[idx] });
       }
-      
+
       for (let idx = change.oldEnd; idx < contextEnd && idx < oldLines.length; idx++) {
         hunk.lines.push({ type: ' ', content: oldLines[idx] });
       }
-      
+
       hunks.push(hunk);
-      
+
       accumulatedOffset += (change.newEnd - change.newStart) - (change.oldEnd - change.oldStart);
     }
-    
+
     let addedLines = 0;
     let removedLines = 0;
-    
+
     for (const hunk of hunks) {
       for (const line of hunk.lines) {
         if (line.type === '+') addedLines++;
         if (line.type === '-') removedLines++;
       }
     }
-    
+
     let summary = `Updated ${filePath}`;
     if (addedLines > 0 && removedLines > 0) {
-      summary += ` with ${addedLines} addition${
-        addedLines !== 1 ? "s" : ""
-      } and ${removedLines} removal${removedLines !== 1 ? "s" : ""}`;
+      summary += ` with ${addedLines} addition${addedLines !== 1 ? "s" : ""
+        } and ${removedLines} removal${removedLines !== 1 ? "s" : ""}`;
     } else if (addedLines > 0) {
       summary += ` with ${addedLines} addition${addedLines !== 1 ? "s" : ""}`;
     } else if (removedLines > 0) {
-      summary += ` with ${removedLines} removal${
-        removedLines !== 1 ? "s" : ""
-      }`;
+      summary += ` with ${removedLines} removal${removedLines !== 1 ? "s" : ""
+        }`;
     } else if (changes.length === 0) {
       return `No changes in ${filePath}`;
     }
-    
+
     let diff = summary + "\n";
     diff += `--- a/${filePath}\n`;
     diff += `+++ b/${filePath}\n`;
-    
+
     for (const hunk of hunks) {
       diff += `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@\n`;
-      
+
       for (const line of hunk.lines) {
         diff += `${line.type}${line.content}\n`;
       }
     }
-    
+
     return diff.trim();
   }
 

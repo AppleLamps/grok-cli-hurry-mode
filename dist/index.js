@@ -1602,13 +1602,14 @@ ${numberedLines}${additionalLinesMessage}`
           } else {
             return {
               success: false,
-              error: `String not found in file. For multi-line replacements, consider using line-based editing.`
+              error: `String not found in file. The exact multi-line text was not found. This is often due to whitespace differences (spaces vs tabs, line endings). Searched for:
+${oldStr.substring(0, 200)}${oldStr.length > 200 ? "..." : ""}`
             };
           }
         } else {
           return {
             success: false,
-            error: `String not found in file: "${oldStr}"`
+            error: `String not found in file: "${oldStr.substring(0, 100)}${oldStr.length > 100 ? "..." : ""}". Please verify the exact text exists in the file.`
           };
         }
       }
@@ -1859,6 +1860,33 @@ ${numberedLines}${additionalLinesMessage}`
     }
   }
   findFuzzyMatch(content, searchStr) {
+    const normalizedMatch = this.findNormalizedMatch(content, searchStr);
+    if (normalizedMatch) return normalizedMatch;
+    const functionMatch = this.findFunctionMatch(content, searchStr);
+    if (functionMatch) return functionMatch;
+    const importMatch = this.findImportMatch(content, searchStr);
+    if (importMatch) return importMatch;
+    const declarationMatch = this.findDeclarationMatch(content, searchStr);
+    if (declarationMatch) return declarationMatch;
+    const methodMatch = this.findMethodMatch(content, searchStr);
+    if (methodMatch) return methodMatch;
+    return null;
+  }
+  findNormalizedMatch(content, searchStr) {
+    const searchNormalized = this.normalizeForComparison(searchStr);
+    const searchLines = searchStr.split("\n");
+    const contentLines = content.split("\n");
+    for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
+      const candidateLines = contentLines.slice(i, i + searchLines.length);
+      const candidate = candidateLines.join("\n");
+      const candidateNormalized = this.normalizeForComparison(candidate);
+      if (candidateNormalized === searchNormalized) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+  findFunctionMatch(content, searchStr) {
     const functionMatch = searchStr.match(/function\s+(\w+)/);
     if (!functionMatch) return null;
     const functionName = functionMatch[1];
@@ -1892,8 +1920,56 @@ ${numberedLines}${additionalLinesMessage}`
     }
     return null;
   }
+  findImportMatch(content, searchStr) {
+    const importMatch = searchStr.match(/import\s+.*\s+from\s+['"](.+)['"]/);
+    if (!importMatch) return null;
+    const moduleName = importMatch[1];
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (line.includes("import") && line.includes(moduleName)) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(line);
+        if (normalized1 === normalized2) {
+          return line;
+        }
+      }
+    }
+    return null;
+  }
+  findDeclarationMatch(content, searchStr) {
+    const declMatch = searchStr.match(/(const|let|var)\s+(\w+)/);
+    if (!declMatch) return null;
+    const varName = declMatch[2];
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (line.includes(varName) && (line.includes("const") || line.includes("let") || line.includes("var"))) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(line);
+        if (normalized1 === normalized2) {
+          return line;
+        }
+      }
+    }
+    return null;
+  }
+  findMethodMatch(content, searchStr) {
+    const methodMatch = searchStr.match(/(\w+)\s*[=:]\s*\(/);
+    if (!methodMatch) return null;
+    const methodName = methodMatch[1];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(methodName)) {
+        const normalized1 = this.normalizeForComparison(searchStr);
+        const normalized2 = this.normalizeForComparison(lines[i]);
+        if (normalized1 === normalized2) {
+          return lines[i];
+        }
+      }
+    }
+    return null;
+  }
   normalizeForComparison(str) {
-    return str.replace(/["'`]/g, '"').replace(/\s+/g, " ").replace(/{\s+/g, "{ ").replace(/\s+}/g, " }").replace(/;\s*/g, ";").trim();
+    return str.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "  ").replace(/["'`]/g, '"').replace(/\s+/g, " ").replace(/{\s+/g, "{ ").replace(/\s+}/g, " }").replace(/;\s*/g, ";").replace(/,\s*/g, ", ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim();
   }
   isSimilarStructure(search, actual) {
     const extractTokens = (str) => {
@@ -4337,7 +4413,7 @@ var TaskAnalyzer = class {
   /**
    * Determine the scope of the task
    */
-  async determineScope(request, context) {
+  async determineScope(request, _context) {
     const files = [];
     const symbols = [];
     const dependencies = [];
@@ -6741,7 +6817,21 @@ var MultiFileEditorTool = class {
             await this.rollbackOperations(rollbackData.slice(0, index));
             return {
               success: false,
-              error: `Operation ${index + 1} failed: ${result.error}`
+              error: `SELF_CORRECT_ATTEMPT: Multi-file operation ${index + 1} of ${transaction.operations.length} failed: ${result.error}. The transaction has been rolled back. Please try one of these approaches:
+1. Use 'view_file' to check the current state of ${op.filePath}
+2. Break down the operation into smaller, individual file edits
+3. Use 'code_analysis' to verify the file structure first
+4. Try the operations one at a time instead of in a transaction`,
+              metadata: {
+                originalTool: "multi_file_edit",
+                failedOperation: index + 1,
+                totalOperations: transaction.operations.length,
+                failedFile: op.filePath,
+                operationType: op.type,
+                originalError: result.error,
+                suggestedApproach: "sequential_individual_edits",
+                fallbackTools: ["view_file", "str_replace_editor", "code_analysis"]
+              }
             };
           }
           results.push(`\u2713 ${op.type}: ${op.filePath}`);
@@ -6749,7 +6839,21 @@ var MultiFileEditorTool = class {
           await this.rollbackOperations(rollbackData.slice(0, index));
           return {
             success: false,
-            error: `Operation ${index + 1} failed: ${error.message}`
+            error: `SELF_CORRECT_ATTEMPT: Multi-file operation ${index + 1} of ${transaction.operations.length} threw an error: ${error.message}. The transaction has been rolled back. Please try one of these approaches:
+1. Use 'view_file' to check the current state of ${op.filePath}
+2. Verify the file exists and is accessible
+3. Break down into smaller operations
+4. Use 'code_analysis' to understand the file structure`,
+            metadata: {
+              originalTool: "multi_file_edit",
+              failedOperation: index + 1,
+              totalOperations: transaction.operations.length,
+              failedFile: op.filePath,
+              operationType: op.type,
+              originalError: error.message,
+              suggestedApproach: "verify_then_retry",
+              fallbackTools: ["view_file", "code_analysis", "str_replace_editor"]
+            }
           };
         }
       }
@@ -11169,6 +11273,9 @@ var GrokAgent = class extends EventEmitter {
     // Self-correction tracking
     this.toolRetryCount = /* @__PURE__ */ new Map();
     this.maxRetries = 3;
+    // Correction attempt tracking for LLM re-engagement
+    this.correctionAttempts = /* @__PURE__ */ new Map();
+    this.maxCorrectionAttempts = 3;
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
@@ -11529,6 +11636,62 @@ Current working directory: ${process.cwd()}`
     let totalOutputTokens = 0;
     let lastTokenUpdate = 0;
     try {
+      const shouldPlan = this.shouldCreatePlan(message);
+      if (shouldPlan && !this.planExecutionInProgress) {
+        try {
+          yield {
+            type: "content",
+            content: "\n\u{1F4CB} Analyzing request complexity... Generating task plan...\n\n"
+          };
+          const planResult = await this.generateAndConfirmPlan(message);
+          if (planResult.approved && planResult.plan) {
+            yield {
+              type: "content",
+              content: "\u2705 Plan approved. Executing steps...\n\n"
+            };
+            this.planExecutionInProgress = true;
+            const executionResults = await this.executePlanSteps(planResult.plan);
+            this.planExecutionInProgress = false;
+            const successCount = executionResults.filter((r) => r.success).length;
+            const failCount = executionResults.filter((r) => !r.success).length;
+            yield {
+              type: "content",
+              content: `
+\u2705 Plan execution complete!
+   Successful steps: ${successCount}
+   Failed steps: ${failCount}
+
+`
+            };
+            const finalEntry = {
+              type: "assistant",
+              content: `Plan executed with ${successCount} successful steps and ${failCount} failed steps.`,
+              timestamp: /* @__PURE__ */ new Date()
+            };
+            this.chatHistory.push(finalEntry);
+            this.messages.push({
+              role: "assistant",
+              content: finalEntry.content
+            });
+            yield { type: "done" };
+            return;
+          } else {
+            yield {
+              type: "content",
+              content: "Plan rejected. Proceeding with standard agent loop...\n\n"
+            };
+          }
+        } catch (error) {
+          console.warn("Plan generation/execution failed, continuing with standard loop:", error);
+          yield {
+            type: "content",
+            content: `\u26A0\uFE0F Plan generation failed: ${error.message}
+Proceeding with standard approach...
+
+`
+          };
+        }
+      }
       while (toolRounds < maxToolRounds) {
         if (this.abortController?.signal.aborted) {
           yield {
@@ -11626,6 +11789,27 @@ Current working directory: ${process.cwd()}`
                 return null;
               }
               const result = await this.executeTool(toolCall);
+              let correctionInfo = null;
+              if (!result.success && result.error?.includes("SELF_CORRECT_ATTEMPT")) {
+                const correctionResult = this.handleSelfCorrectAttempt(result, toolCall, message);
+                if (correctionResult.shouldRetry && correctionResult.fallbackRequest) {
+                  this.messages.push({
+                    role: "user",
+                    content: `Previous approach failed. ${correctionResult.fallbackRequest}
+
+Please try again with the suggested approach.`
+                  });
+                  correctionInfo = { type: "retry", message: correctionResult.fallbackRequest };
+                  return {
+                    toolCall,
+                    result: { success: true, output: "Retrying with fallback strategy" },
+                    entry: null,
+                    correctionInfo
+                  };
+                } else {
+                  correctionInfo = { type: "exhausted" };
+                }
+              }
               const toolResultEntry = {
                 type: "tool_result",
                 content: result.success ? result.output || "Success" : result.error || "Error occurred",
@@ -11639,7 +11823,7 @@ Current working directory: ${process.cwd()}`
                 content: result.success ? result.output || "Success" : result.error || "Error",
                 tool_call_id: toolCall.id
               });
-              return { toolCall, result, entry: toolResultEntry };
+              return { toolCall, result, entry: toolResultEntry, correctionInfo };
             });
             const batchResults = await Promise.all(batchPromises);
             if (batchResults.includes(null)) {
@@ -11650,12 +11834,33 @@ Current working directory: ${process.cwd()}`
               yield { type: "done" };
               return;
             }
-            for (const { toolCall, result } of batchResults) {
-              yield {
-                type: "tool_result",
-                toolCall,
-                toolResult: result
-              };
+            for (const batchResult of batchResults) {
+              if (batchResult && batchResult.correctionInfo) {
+                if (batchResult.correctionInfo.type === "retry") {
+                  yield {
+                    type: "content",
+                    content: `
+\u{1F504} Self-correction triggered. Retrying with alternative approach...
+
+`
+                  };
+                } else if (batchResult.correctionInfo.type === "exhausted") {
+                  yield {
+                    type: "content",
+                    content: `
+\u274C Self-correction attempts exhausted. Please try a different approach.
+
+`
+                  };
+                }
+              }
+              if (batchResult && batchResult.entry) {
+                yield {
+                  type: "tool_result",
+                  toolCall: batchResult.toolCall,
+                  toolResult: batchResult.result
+                };
+              }
             }
           }
           inputTokens = this.tokenCounter.countMessageTokens(
@@ -11707,40 +11912,107 @@ Current working directory: ${process.cwd()}`
         case "view_file":
           try {
             const range = args.start_line && args.end_line ? [args.start_line, args.end_line] : void 0;
-            return await this.textEditor.view(args.path, range);
-          } catch (error) {
-            console.warn(`view_file tool failed, falling back to bash: ${error.message}`);
-            const path25 = args.path;
-            let command = `cat "${path25}"`;
-            if (args.start_line && args.end_line) {
-              command = `sed -n '${args.start_line},${args.end_line}p' "${path25}"`;
+            const result = await this.textEditor.view(args.path, range);
+            if (!result.success && result.error?.includes("not found")) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: File not found: ${args.path}. Please verify the file path is correct. Try one of these:
+1. Use 'search' to find the file in the project
+2. Check if the file was moved or renamed
+3. Verify you're in the correct directory
+4. Use 'bash' with 'find' or 'ls' to locate the file`,
+                metadata: {
+                  originalTool: "view_file",
+                  originalError: result.error,
+                  suggestedApproach: "search_for_file",
+                  fallbackTools: ["search", "bash"]
+                }
+              };
             }
-            return await this.bash.execute(command);
+            return result;
+          } catch (error) {
+            console.warn(`view_file tool failed: ${error.message}`);
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: Failed to view file: ${error.message}. Please verify the file exists and is accessible.`,
+              metadata: {
+                originalTool: "view_file",
+                originalError: error.message,
+                suggestedApproach: "verify_file_exists",
+                fallbackTools: ["bash", "search"]
+              }
+            };
           }
         case "create_file":
           try {
-            return await this.textEditor.create(args.path, args.content);
+            const result = await this.textEditor.create(args.path, args.content);
+            if (!result.success && result.error?.includes("already exists")) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: File already exists: ${args.path}. Please try one of these approaches:
+1. Use 'view_file' to see the current content
+2. Use 'str_replace_editor' to modify the existing file
+3. Choose a different file name
+4. Delete the existing file first if you want to replace it`,
+                metadata: {
+                  originalTool: "create_file",
+                  originalError: result.error,
+                  suggestedApproach: "view_then_edit",
+                  fallbackTools: ["view_file", "str_replace_editor"]
+                }
+              };
+            }
+            return result;
           } catch (error) {
-            console.warn(`create_file tool failed, falling back to bash: ${error.message}`);
-            const command = `cat > "${args.path}" << 'EOF'
-${args.content}
-EOF`;
-            return await this.bash.execute(command);
+            console.warn(`create_file tool failed: ${error.message}`);
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: Failed to create file: ${error.message}. Please verify the directory exists and you have write permissions.`,
+              metadata: {
+                originalTool: "create_file",
+                originalError: error.message,
+                suggestedApproach: "verify_directory",
+                fallbackTools: ["bash"]
+              }
+            };
           }
         case "str_replace_editor":
           try {
-            return await this.textEditor.strReplace(
+            const result = await this.textEditor.strReplace(
               args.path,
               args.old_str,
               args.new_str,
               args.replace_all
             );
+            if (!result.success && result.error?.includes("String not found")) {
+              return {
+                success: false,
+                error: `SELF_CORRECT_ATTEMPT: The exact string was not found in the file. This often happens due to whitespace differences or formatting. Please try one of these approaches:
+1. Use 'view_file' to see the exact current content first
+2. Use 'multi_file_edit' with line-based operations instead
+3. Use 'code_analysis' to analyze the file structure first
+4. Break the edit into smaller, more specific single-line changes`,
+                metadata: {
+                  originalTool: "str_replace_editor",
+                  originalError: result.error,
+                  suggestedApproach: "view_file_then_retry",
+                  fallbackTools: ["view_file", "multi_file_edit", "code_analysis"]
+                }
+              };
+            }
+            return result;
           } catch (error) {
-            console.warn(`str_replace_editor tool failed, falling back to bash: ${error.message}`);
-            const escapedOld = args.old_str.replace(/[\/&]/g, "\\$&");
-            const escapedNew = args.new_str.replace(/[\/&]/g, "\\$&");
-            const sedCommand = args.replace_all ? `sed -i 's/${escapedOld}/${escapedNew}/g' "${args.path}"` : `sed -i '0,/${escapedOld}/s/${escapedOld}/${escapedNew}/' "${args.path}"`;
-            return await this.bash.execute(sedCommand);
+            console.warn(`str_replace_editor tool failed: ${error.message}`);
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: File operation failed: ${error.message}. Please use 'view_file' to check the current state and try again with the exact content.`,
+              metadata: {
+                originalTool: "str_replace_editor",
+                originalError: error.message,
+                suggestedApproach: "view_file_then_retry",
+                fallbackTools: ["view_file", "multi_file_edit"]
+              }
+            };
           }
         case "edit_file":
           if (!this.morphEditor) {
@@ -11868,8 +12140,17 @@ EOF`;
           try {
             return await this.refactoringAssistant.execute(args);
           } catch (error) {
-            console.warn(`refactoring_assistant failed: ${error.message}. Attempting fallback...`);
-            return await this.attemptFallback(toolCall, error);
+            console.warn(`refactoring_assistant failed: ${error.message}`);
+            return {
+              success: false,
+              error: `SELF_CORRECT_ATTEMPT: The refactoring operation failed with error: "${error.message}". Please generate a new plan using the 'multi_file_edit' tool for more direct text manipulation across multiple files. Break down the refactoring into smaller, explicit file edits with specific line ranges and content replacements.`,
+              metadata: {
+                originalTool: "refactoring_assistant",
+                originalError: error.message,
+                suggestedApproach: "multi_file_edit",
+                fallbackTools: ["multi_file_edit", "code_analysis", "str_replace_editor"]
+              }
+            };
           }
         case "task_planner":
           const plannerResult = await this.taskPlanner.execute(args);
@@ -12262,6 +12543,151 @@ ${planPreview}`,
         error: `Bash fallback failed: ${error.message}`
       };
     }
+  }
+  /**
+   * PHASE 1: Plan Detection
+   * Determine if a user request warrants automatic task planning
+   */
+  shouldCreatePlan(message) {
+    const lowerMsg = message.toLowerCase();
+    const complexKeywords = [
+      "refactor",
+      "move",
+      "extract",
+      "implement",
+      "restructure",
+      "redesign",
+      "reorganize",
+      "migrate",
+      "convert",
+      "transform"
+    ];
+    let complexityScore = 0;
+    if (complexKeywords.some((kw) => lowerMsg.includes(kw))) {
+      complexityScore += 2;
+    }
+    const fileMatches = message.match(/\b[\w\-./]+\.(ts|tsx|js|jsx|py|java|go|rs|cpp|c|h)\b/g);
+    if (fileMatches && fileMatches.length > 1) {
+      complexityScore += 2;
+    }
+    const architectureKeywords = ["architecture", "design", "pattern", "dependency", "module"];
+    if (architectureKeywords.some((kw) => lowerMsg.includes(kw))) {
+      complexityScore += 1;
+    }
+    if (lowerMsg.includes("across") || lowerMsg.includes("throughout")) {
+      complexityScore += 1;
+    }
+    return complexityScore >= 3;
+  }
+  /**
+   * PHASE 2: Confirmation & Execution
+   * Generate plan and request user confirmation
+   */
+  async generateAndConfirmPlan(userRequest) {
+    try {
+      const { plan, validation } = await this.taskOrchestrator.createPlan(
+        userRequest,
+        { currentDirectory: this.getCurrentDirectory() }
+      );
+      const preview = this.taskOrchestrator.formatPlanPreview(plan, validation);
+      const confirmResult = await this.confirmationTool.requestConfirmation({
+        operation: "Execute Task Plan",
+        filename: `${plan.steps.length} steps affecting ${plan.metadata.filesAffected.length} files`,
+        description: `${plan.description}
+
+${preview}`,
+        showVSCodeOpen: false,
+        autoAccept: false
+      });
+      return {
+        approved: confirmResult.success,
+        plan: confirmResult.success ? plan : void 0
+      };
+    } catch (error) {
+      console.error("Plan generation error:", error);
+      return { approved: false };
+    }
+  }
+  /**
+   * PHASE 2: Sequential Plan Execution
+   * Execute plan steps sequentially with dependency handling
+   */
+  async executePlanSteps(plan) {
+    const results = [];
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      if (step.dependencies.length > 0) {
+        const depsCompleted = step.dependencies.every(
+          (depId) => plan.steps.find((s) => s.id === depId)?.status === "completed"
+        );
+        if (!depsCompleted) {
+          step.status = "skipped";
+          continue;
+        }
+      }
+      step.status = "running";
+      step.startTime = Date.now();
+      try {
+        const toolCall = {
+          id: step.id,
+          type: "function",
+          function: {
+            name: step.tool,
+            arguments: JSON.stringify(step.args)
+          }
+        };
+        const result = await this.executeTool(toolCall);
+        if (result.success) {
+          step.status = "completed";
+          step.result = result;
+          results.push({ stepId: step.id, success: true, result });
+        } else {
+          throw new Error(result.error || "Tool execution failed");
+        }
+      } catch (error) {
+        step.status = "failed";
+        step.error = error.message;
+        results.push({ stepId: step.id, success: false, error: error.message });
+        if (this.taskOrchestrator["config"].autoRollbackOnFailure) {
+          console.warn("Auto-rollback triggered");
+          break;
+        }
+      }
+      step.endTime = Date.now();
+    }
+    return results;
+  }
+  /**
+   * PHASE 3: LLM Re-engagement
+   * Handle self-correction attempts by re-engaging the LLM
+   */
+  handleSelfCorrectAttempt(toolResult, toolCall, userRequest) {
+    const correctionKey = this.hashRequest(userRequest);
+    const attempts = this.correctionAttempts.get(correctionKey) || [];
+    if (attempts.length >= this.maxCorrectionAttempts) {
+      return { shouldRetry: false };
+    }
+    const fallbackMatch = toolResult.error?.match(/SELF_CORRECT_ATTEMPT: (.+?)(?:\n|$)/s);
+    const fallbackRequest = fallbackMatch ? fallbackMatch[1] : toolResult.error;
+    attempts.push({
+      tool: toolCall.function.name,
+      error: toolResult.error || "Unknown error",
+      timestamp: Date.now(),
+      fallbackStrategy: "decompose_and_retry"
+    });
+    this.correctionAttempts.set(correctionKey, attempts);
+    console.log(`\u{1F504} Self-correction attempt ${attempts.length}/${this.maxCorrectionAttempts}`);
+    return {
+      shouldRetry: true,
+      fallbackRequest: fallbackRequest || void 0
+    };
+  }
+  /**
+   * Hash a request for tracking correction attempts
+   */
+  hashRequest(request) {
+    const crypto2 = __require("crypto");
+    return crypto2.createHash("md5").update(request).digest("hex");
   }
 };
 

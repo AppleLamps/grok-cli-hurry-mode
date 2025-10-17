@@ -20,7 +20,7 @@ export class TaskAnalyzer {
   /**
    * Analyze a user request to understand what needs to be done
    */
-  async analyzeRequest(userRequest: string, _context?: { currentDirectory?: string }): Promise<TaskAnalysis> {
+  async analyzeRequest(userRequest: string, context?: { currentDirectory?: string }): Promise<TaskAnalysis> {
     const intent = this.extractIntent(userRequest);
     const scope = await this.determineScope(userRequest, context);
     const complexity = this.assessComplexity(userRequest, scope);
@@ -75,7 +75,7 @@ export class TaskAnalyzer {
   /**
    * Determine the scope of the task
    */
-  private async determineScope(request: string, context?: { currentDirectory?: string }): Promise<{
+  private async determineScope(request: string, _context?: { currentDirectory?: string }): Promise<{
     files: string[];
     symbols: string[];
     dependencies: string[];

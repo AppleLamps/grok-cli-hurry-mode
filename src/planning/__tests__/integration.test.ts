@@ -201,7 +201,7 @@ describe('Task Planning Framework - Integration Tests', () => {
 
       // Create mock that fails on second call
       let callCount = 0;
-      const failingExecutor = vi.fn(async (_toolName: string, _args: any) => {
+      const failingExecutor = vi.fn(async (toolName: string, _args: any) => {
         callCount++;
         if (callCount === 2) {
           throw new Error('Simulated tool failure');
@@ -278,7 +278,7 @@ describe('Task Planning Framework - Integration Tests', () => {
     it('should provide mitigation suggestions for risky operations', async () => {
       const riskyRequest = 'Refactor entire authentication system';
 
-      const { plan, validation } = await orchestrator.createPlan(riskyRequest);
+      const { plan: _plan, validation } = await orchestrator.createPlan(riskyRequest);
 
       // Should have validation results
       expect(validation).toBeDefined();

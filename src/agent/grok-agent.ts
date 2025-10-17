@@ -53,6 +53,12 @@ export interface StreamingChunk {
   tokenCount?: number;
 }
 
+export interface FallbackStrategy {
+  fallbackTools: string[];
+  strategy: 'decompose_and_retry' | 'sequential_execution' | 'simpler_tool' | 'bash_fallback';
+  description: string;
+}
+
 export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
@@ -87,6 +93,10 @@ export class GrokAgent extends EventEmitter {
   private readonly minRequestInterval: number = 500; // ms
   private sessionLogPath: string;
   private planExecutionInProgress: boolean = false;
+  // Self-correction tracking
+  private toolRetryCount: Map<string, number> = new Map();
+  private readonly maxRetries: number = 3;
+  private fallbackStrategies: Map<string, FallbackStrategy>;
 
   constructor(
     apiKey: string,
@@ -141,6 +151,40 @@ export class GrokAgent extends EventEmitter {
     this.taskOrchestrator.on('phase', (data: any) => {
       this.emit('plan_phase', data);
     });
+
+    // Initialize fallback strategies for self-correction
+    this.fallbackStrategies = new Map([
+      ['refactoring_assistant', {
+        fallbackTools: ['multi_file_edit', 'code_analysis', 'str_replace_editor'],
+        strategy: 'decompose_and_retry',
+        description: 'Break down refactoring into smaller file edits'
+      }],
+      ['multi_file_edit', {
+        fallbackTools: ['str_replace_editor'],
+        strategy: 'sequential_execution',
+        description: 'Execute file edits one at a time'
+      }],
+      ['code_analysis', {
+        fallbackTools: ['str_replace_editor', 'bash'],
+        strategy: 'simpler_tool',
+        description: 'Use simpler text editing tools'
+      }],
+      ['advanced_search', {
+        fallbackTools: ['search', 'bash'],
+        strategy: 'bash_fallback',
+        description: 'Fall back to grep/find commands'
+      }],
+      ['symbol_search', {
+        fallbackTools: ['search', 'bash'],
+        strategy: 'bash_fallback',
+        description: 'Use text-based search instead of AST'
+      }],
+      ['dependency_analyzer', {
+        fallbackTools: ['search', 'bash'],
+        strategy: 'bash_fallback',
+        description: 'Use grep to find imports'
+      }]
+    ]);
 
     // Initialize MCP servers if configured
     this.initializeMCP();
@@ -925,7 +969,13 @@ Current working directory: ${process.cwd()}`,
           return await this.codeContext.execute(args);
 
         case "refactoring_assistant":
-          return await this.refactoringAssistant.execute(args);
+          try {
+            return await this.refactoringAssistant.execute(args);
+          } catch (error: any) {
+            // Self-correction: Refactoring failed, try fallback strategy
+            console.warn(`refactoring_assistant failed: ${error.message}. Attempting fallback...`);
+            return await this.attemptFallback(toolCall, error);
+          }
 
         case "task_planner":
           // Handle task planner operations
@@ -967,6 +1017,16 @@ Current working directory: ${process.cwd()}`,
           };
       }
     } catch (error: any) {
+      // Self-correction: Attempt fallback if available
+      console.warn(`Tool ${toolCall.function.name} failed: ${error.message}`);
+
+      // Check if we have a fallback strategy for this tool
+      if (this.fallbackStrategies.has(toolCall.function.name)) {
+        console.log(`Attempting self-correction for ${toolCall.function.name}...`);
+        return await this.attemptFallback(toolCall, error);
+      }
+
+      // No fallback available, return error
       return {
         success: false,
         error: `Tool execution error: ${error.message}`,
@@ -1190,5 +1250,257 @@ Current working directory: ${process.cwd()}`,
    */
   isPlanExecutionInProgress(): boolean {
     return this.planExecutionInProgress;
+  }
+
+  /**
+   * Self-Correction: Attempt fallback strategy when a tool fails
+   */
+  private async attemptFallback(toolCall: GrokToolCall, originalError: Error): Promise<ToolResult> {
+    const toolName = toolCall.function.name;
+    const retryKey = `${toolName}_${toolCall.id}`;
+
+    // Check retry count
+    const currentRetries = this.toolRetryCount.get(retryKey) || 0;
+    if (currentRetries >= this.maxRetries) {
+      this.toolRetryCount.delete(retryKey);
+      return {
+        success: false,
+        error: `Tool ${toolName} failed after ${this.maxRetries} retry attempts: ${originalError.message}`
+      };
+    }
+
+    // Increment retry count
+    this.toolRetryCount.set(retryKey, currentRetries + 1);
+
+    // Get fallback strategy
+    const strategy = this.fallbackStrategies.get(toolName);
+    if (!strategy) {
+      return {
+        success: false,
+        error: `No fallback strategy available for ${toolName}: ${originalError.message}`
+      };
+    }
+
+    console.log(`🔄 Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
+    console.log(`   Strategy: ${strategy.description}`);
+
+    try {
+      // Execute fallback based on strategy type
+      const result = await this.executeFallbackStrategy(toolCall, strategy, originalError);
+
+      // If successful, clear retry count
+      if (result.success) {
+        this.toolRetryCount.delete(retryKey);
+        console.log(`✅ Self-correction successful for ${toolName}`);
+      }
+
+      return result;
+    } catch (fallbackError: any) {
+      console.warn(`❌ Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
+
+      // Try next retry with exponential backoff
+      if (currentRetries + 1 < this.maxRetries) {
+        const backoffMs = Math.pow(2, currentRetries) * 1000; // 1s, 2s, 4s
+        console.log(`   Waiting ${backoffMs}ms before next retry...`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+
+        // Retry with same tool call
+        return await this.attemptFallback(toolCall, originalError);
+      }
+
+      // All retries exhausted
+      this.toolRetryCount.delete(retryKey);
+      return {
+        success: false,
+        error: `All fallback attempts failed for ${toolName}: ${fallbackError.message}`
+      };
+    }
+  }
+
+  /**
+   * Execute a specific fallback strategy
+   */
+  private async executeFallbackStrategy(
+    originalToolCall: GrokToolCall,
+    strategy: FallbackStrategy,
+    originalError: Error
+  ): Promise<ToolResult> {
+    const args = JSON.parse(originalToolCall.function.arguments);
+
+    switch (strategy.strategy) {
+      case 'decompose_and_retry':
+        return await this.decomposeAndRetry(originalToolCall, strategy, args);
+
+      case 'sequential_execution':
+        return await this.sequentialExecution(originalToolCall, strategy, args);
+
+      case 'simpler_tool':
+        return await this.useSimplerTool(originalToolCall, strategy, args);
+
+      case 'bash_fallback':
+        return await this.bashFallback(originalToolCall, strategy, args, originalError);
+
+      default:
+        return {
+          success: false,
+          error: `Unknown fallback strategy: ${strategy.strategy}`
+        };
+    }
+  }
+
+  /**
+   * Decompose complex operation into smaller steps
+   */
+  private async decomposeAndRetry(
+    originalToolCall: GrokToolCall,
+    strategy: FallbackStrategy,
+    args: any
+  ): Promise<ToolResult> {
+    const toolName = originalToolCall.function.name;
+
+    if (toolName === 'refactoring_assistant') {
+      // Break down refactoring into multi_file_edit operations
+      console.log('   Breaking down refactoring into file edits...');
+
+      const fallbackTool = strategy.fallbackTools[0]; // multi_file_edit
+      const fallbackCall: GrokToolCall = {
+        id: `fallback_${originalToolCall.id}`,
+        type: 'function',
+        function: {
+          name: fallbackTool,
+          arguments: JSON.stringify({
+            operation: 'execute_multi_file',
+            operations: args.scope?.files?.map((file: string) => ({
+              type: 'edit',
+              filePath: file,
+              description: `Refactor ${file}`
+            })) || [],
+            description: 'Refactoring via multi-file edit fallback'
+          })
+        }
+      };
+
+      return await this.executeTool(fallbackCall);
+    }
+
+    return {
+      success: false,
+      error: 'Decompose strategy not implemented for this tool'
+    };
+  }
+
+  /**
+   * Execute operations sequentially instead of in batch
+   */
+  private async sequentialExecution(
+    originalToolCall: GrokToolCall,
+    strategy: FallbackStrategy,
+    args: any
+  ): Promise<ToolResult> {
+    const toolName = originalToolCall.function.name;
+
+    if (toolName === 'multi_file_edit' && args.operations) {
+      console.log(`   Executing ${args.operations.length} operations sequentially...`);
+
+      const results: any[] = [];
+      const fallbackTool = strategy.fallbackTools[0]; // str_replace_editor
+
+      for (const op of args.operations) {
+        const fallbackCall: GrokToolCall = {
+          id: `fallback_seq_${Date.now()}`,
+          type: 'function',
+          function: {
+            name: fallbackTool,
+            arguments: JSON.stringify({
+              path: op.filePath,
+              old_str: op.old_str || '',
+              new_str: op.new_str || op.content || '',
+              replace_all: false
+            })
+          }
+        };
+
+        const result = await this.executeTool(fallbackCall);
+        results.push(result);
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: `Sequential execution failed at operation ${results.length}: ${result.error}`
+          };
+        }
+      }
+
+      return {
+        success: true,
+        output: `Successfully executed ${results.length} operations sequentially`
+      };
+    }
+
+    return {
+      success: false,
+      error: 'Sequential execution not applicable for this tool'
+    };
+  }
+
+  /**
+   * Use a simpler tool as fallback
+   */
+  private async useSimplerTool(
+    originalToolCall: GrokToolCall,
+    strategy: FallbackStrategy,
+    args: any
+  ): Promise<ToolResult> {
+    console.log(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
+
+    const fallbackTool = strategy.fallbackTools[0];
+    const fallbackCall: GrokToolCall = {
+      id: `fallback_simple_${originalToolCall.id}`,
+      type: 'function',
+      function: {
+        name: fallbackTool,
+        arguments: JSON.stringify(args)
+      }
+    };
+
+    return await this.executeTool(fallbackCall);
+  }
+
+  /**
+   * Fall back to bash commands
+   */
+  private async bashFallback(
+    originalToolCall: GrokToolCall,
+    _strategy: FallbackStrategy,
+    args: any,
+    originalError: Error
+  ): Promise<ToolResult> {
+    const toolName = originalToolCall.function.name;
+    console.log('   Falling back to bash commands...');
+
+    try {
+      if (toolName === 'symbol_search' || toolName === 'advanced_search') {
+        // Use grep for search
+        const query = args.query || args.pattern || '';
+        const command = `grep -r "${query}" . --include="*.ts" --include="*.js" --include="*.py" -n`;
+        return await this.bash.execute(command);
+      }
+
+      if (toolName === 'dependency_analyzer') {
+        // Use grep to find imports
+        const command = `grep -r "^import\\|^from\\|require(" . --include="*.ts" --include="*.js" --include="*.py" -n`;
+        return await this.bash.execute(command);
+      }
+
+      return {
+        success: false,
+        error: `Bash fallback not implemented for ${toolName}: ${originalError.message}`
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `Bash fallback failed: ${error.message}`
+      };
+    }
   }
 }

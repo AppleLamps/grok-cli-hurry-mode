@@ -4650,8 +4650,10 @@ var RiskAssessor = class {
 // src/planning/task-planner.ts
 var TaskPlanner = class {
   constructor(rootPath, config2) {
+    this.rootPath = rootPath;
     this.analyzer = new TaskAnalyzer(rootPath);
     this.riskAssessor = new RiskAssessor(rootPath);
+    this.intelligenceEngine = new CodeIntelligenceEngine(rootPath);
     this.config = {
       maxSteps: 50,
       maxDuration: 3e5,
@@ -4666,29 +4668,151 @@ var TaskPlanner = class {
   }
   /**
    * Create a plan from user request
+   * Now leverages CodeIntelligenceEngine for context-aware planning
    */
   async createPlan(userRequest, context) {
+    if (!this.intelligenceEngine["isInitialized"]) {
+      await this.intelligenceEngine.initialize();
+    }
     const analysis = await this.analyzer.analyzeRequest(userRequest, context);
-    const steps = await this.generateSteps(analysis);
+    const enhancedAnalysis = await this.enhanceAnalysisWithIntelligence(analysis, userRequest);
+    const steps = await this.generateSteps(enhancedAnalysis, userRequest);
     const totalEstimatedDuration = steps.reduce((sum, step) => sum + step.estimatedDuration, 0);
     const overallRiskLevel = this.calculateOverallRisk(steps);
     const plan = {
       id: this.generatePlanId(),
       userIntent: userRequest,
-      description: analysis.suggestedApproach,
+      description: enhancedAnalysis.suggestedApproach,
       steps,
       totalEstimatedDuration,
       overallRiskLevel,
       createdAt: Date.now(),
       status: "draft",
       metadata: {
-        filesAffected: analysis.scope.files,
-        toolsUsed: analysis.requiredTools,
+        filesAffected: enhancedAnalysis.scope.files,
+        toolsUsed: enhancedAnalysis.requiredTools,
         dependenciesAnalyzed: true,
         risksAssessed: true
       }
     };
     return plan;
+  }
+  /**
+   * Enhance task analysis with code intelligence
+   * Uses symbol search and dependency analysis to find relevant files
+   */
+  async enhanceAnalysisWithIntelligence(analysis, userRequest) {
+    const enhancedScope = { ...analysis.scope };
+    const keywords = this.extractKeywords(userRequest);
+    if (keywords.length > 0) {
+      const relevantFiles = await this.findRelevantFiles(keywords, analysis.intent);
+      enhancedScope.files = [.../* @__PURE__ */ new Set([...enhancedScope.files, ...relevantFiles])];
+    }
+    if (this.isEndpointRelated(userRequest)) {
+      const endpointFiles = await this.findEndpointRelatedFiles(userRequest);
+      enhancedScope.files = [.../* @__PURE__ */ new Set([...enhancedScope.files, ...endpointFiles.files])];
+      enhancedScope.symbols = [.../* @__PURE__ */ new Set([...enhancedScope.symbols, ...endpointFiles.symbols])];
+    }
+    if (enhancedScope.files.length > 0) {
+      const dependencies = await this.analyzeDependencies(enhancedScope.files);
+      enhancedScope.dependencies = dependencies;
+    }
+    return {
+      ...analysis,
+      scope: enhancedScope
+    };
+  }
+  /**
+   * Extract keywords from user request for symbol search
+   */
+  extractKeywords(request) {
+    const keywords = [];
+    const lowerRequest = request.toLowerCase();
+    const quotedMatches = request.match(/"([^"]+)"|'([^']+)'/g);
+    if (quotedMatches) {
+      keywords.push(...quotedMatches.map((m) => m.replace(/['"]/g, "")));
+    }
+    const identifierMatches = request.match(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)*\b|\b[a-z]+(?:[A-Z][a-z]+)+\b/g);
+    if (identifierMatches) {
+      keywords.push(...identifierMatches);
+    }
+    const codeTerms = ["route", "controller", "service", "model", "component", "function", "class", "interface"];
+    for (const term of codeTerms) {
+      if (lowerRequest.includes(term)) {
+        keywords.push(term);
+      }
+    }
+    return [...new Set(keywords)];
+  }
+  /**
+   * Check if request is endpoint-related
+   */
+  isEndpointRelated(request) {
+    const endpointKeywords = ["endpoint", "route", "api", "/users", "/api", "GET", "POST", "PUT", "DELETE", "PATCH"];
+    const lowerRequest = request.toLowerCase();
+    return endpointKeywords.some((keyword) => lowerRequest.includes(keyword.toLowerCase()));
+  }
+  /**
+   * Find files related to endpoint creation/modification
+   */
+  async findEndpointRelatedFiles(request) {
+    const files = [];
+    const symbols = [];
+    try {
+      const routeResults = this.intelligenceEngine.findSymbolByPattern("route", false);
+      files.push(...routeResults.map((r) => r.filePath));
+      const controllerResults = this.intelligenceEngine.findSymbolByPattern("controller", false);
+      files.push(...controllerResults.map((r) => r.filePath));
+      symbols.push(...controllerResults.map((r) => r.symbol.name));
+      const serviceResults = this.intelligenceEngine.findSymbolByPattern("service", false);
+      files.push(...serviceResults.map((r) => r.filePath));
+      symbols.push(...serviceResults.map((r) => r.symbol.name));
+      const pathMatch = request.match(/\/[\w/:]+/);
+      if (pathMatch) {
+        const pathParts = pathMatch[0].split("/").filter(Boolean);
+        for (const part of pathParts) {
+          const results = this.intelligenceEngine.findSymbolByPattern(part, false);
+          files.push(...results.map((r) => r.filePath));
+          symbols.push(...results.map((r) => r.symbol.name));
+        }
+      }
+    } catch (error) {
+      console.warn("Error finding endpoint-related files:", error);
+    }
+    return {
+      files: [...new Set(files)],
+      symbols: [...new Set(symbols)]
+    };
+  }
+  /**
+   * Find relevant files using symbol search
+   */
+  async findRelevantFiles(keywords, _intent) {
+    const files = [];
+    try {
+      for (const keyword of keywords) {
+        const results = this.intelligenceEngine.findSymbolByPattern(keyword, false);
+        files.push(...results.map((r) => r.filePath));
+      }
+    } catch (error) {
+      console.warn("Error finding relevant files:", error);
+    }
+    return [...new Set(files)];
+  }
+  /**
+   * Analyze dependencies for given files
+   */
+  async analyzeDependencies(files) {
+    const dependencies = [];
+    try {
+      for (const file of files) {
+        const deps = this.intelligenceEngine.getDependencies(file);
+        dependencies.push(...Array.from(deps));
+      }
+    } catch (error) {
+      console.warn("Error analyzing dependencies:", error);
+    }
+    return [...new Set(dependencies)];
   }
   /**
    * Validate a plan before execution
@@ -4735,66 +4859,225 @@ var TaskPlanner = class {
   }
   /**
    * Generate steps from analysis
+   * Now creates concrete, executable tool calls with specific file paths
    */
-  async generateSteps(analysis) {
+  async generateSteps(analysis, userRequest) {
     const steps = [];
     let stepCounter = 0;
-    steps.push({
-      id: `step_${++stepCounter}`,
-      type: "analyze",
-      description: "Analyze codebase and dependencies",
-      tool: "code_context",
-      args: {
-        operation: "analyze_context",
-        files: analysis.scope.files
-      },
-      dependencies: [],
-      estimatedDuration: 2e3,
-      riskLevel: "low",
-      status: "pending"
-    });
+    if (analysis.scope.files.length > 0) {
+      steps.push({
+        id: `step_${++stepCounter}`,
+        type: "analyze",
+        description: `Analyze ${analysis.scope.files.length} affected files and dependencies`,
+        tool: "code_context",
+        args: {
+          operation: "analyze_context",
+          files: analysis.scope.files.slice(0, 10)
+          // Limit to first 10 files
+        },
+        dependencies: [],
+        estimatedDuration: 2e3,
+        riskLevel: "low",
+        status: "pending"
+      });
+    }
     switch (analysis.intent) {
       case "refactor":
-        steps.push(...this.generateRefactoringSteps(analysis, stepCounter));
+        steps.push(...await this.generateRefactoringSteps(analysis, stepCounter, userRequest));
         break;
       case "move":
-        steps.push(...this.generateMoveSteps(analysis, stepCounter));
+        steps.push(...await this.generateMoveSteps(analysis, stepCounter, userRequest));
         break;
       case "extract":
-        steps.push(...this.generateExtractSteps(analysis, stepCounter));
+        steps.push(...await this.generateExtractSteps(analysis, stepCounter, userRequest));
         break;
       case "rename":
-        steps.push(...this.generateRenameSteps(analysis, stepCounter));
+        steps.push(...await this.generateRenameSteps(analysis, stepCounter, userRequest));
         break;
       case "create":
-        steps.push(...this.generateCreateSteps(analysis, stepCounter));
+        steps.push(...await this.generateCreateSteps(analysis, stepCounter, userRequest));
         break;
       case "remove":
-        steps.push(...this.generateRemoveSteps(analysis, stepCounter));
+        steps.push(...await this.generateRemoveSteps(analysis, stepCounter, userRequest));
+        break;
+      case "implement":
+      case "generate":
+        if (this.isEndpointRelated(userRequest)) {
+          steps.push(...await this.generateEndpointSteps(analysis, stepCounter, userRequest));
+        } else {
+          steps.push(...await this.generateGenericSteps(analysis, stepCounter, userRequest));
+        }
         break;
       default:
-        steps.push(...this.generateGenericSteps(analysis, stepCounter));
+        steps.push(...await this.generateGenericSteps(analysis, stepCounter, userRequest));
     }
-    steps.push({
-      id: `step_${steps.length + 1}`,
-      type: "validate",
-      description: "Validate changes and check for errors",
-      tool: "dependency_analyzer",
-      args: {
-        operation: "analyze_dependencies",
-        rootPath: "."
-      },
-      dependencies: steps.map((s) => s.id),
-      estimatedDuration: 3e3,
-      riskLevel: "low",
-      status: "pending"
-    });
+    if (steps.length > 1) {
+      steps.push({
+        id: `step_${steps.length + 1}`,
+        type: "validate",
+        description: "Validate changes and check for errors",
+        tool: "dependency_analyzer",
+        args: {
+          operation: "analyze_dependencies",
+          rootPath: "."
+        },
+        dependencies: steps.map((s) => s.id),
+        estimatedDuration: 3e3,
+        riskLevel: "low",
+        status: "pending"
+      });
+    }
     return steps;
+  }
+  /**
+   * Generate steps for endpoint creation (e.g., "Add a new /users/:id endpoint")
+   */
+  async generateEndpointSteps(analysis, startCounter, userRequest) {
+    const steps = [];
+    let counter = startCounter;
+    const pathMatch = userRequest.match(/\/[\w/:]+/);
+    const methodMatch = userRequest.match(/\b(GET|POST|PUT|DELETE|PATCH)\b/i);
+    const endpointPath = pathMatch ? pathMatch[0] : "/api/resource";
+    const httpMethod = methodMatch ? methodMatch[0].toUpperCase() : "GET";
+    const routeFiles = analysis.scope.files.filter(
+      (f) => f.includes("route") || f.includes("router")
+    );
+    const controllerFiles = analysis.scope.files.filter(
+      (f) => f.includes("controller") || f.includes("handler")
+    );
+    const serviceFiles = analysis.scope.files.filter(
+      (f) => f.includes("service") || f.includes("repository")
+    );
+    if (routeFiles.length > 0) {
+      steps.push({
+        id: `step_${++counter}`,
+        type: "create",
+        description: `Add ${httpMethod} ${endpointPath} route to ${routeFiles[0]}`,
+        tool: "multi_file_edit",
+        args: {
+          operation: "execute_multi_file",
+          operations: [{
+            type: "edit",
+            filePath: routeFiles[0],
+            description: `Add new ${httpMethod} route for ${endpointPath}`
+          }],
+          description: `Add ${httpMethod} ${endpointPath} endpoint to router`
+        },
+        dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
+        estimatedDuration: 3e3,
+        riskLevel: "low",
+        status: "pending"
+      });
+    }
+    if (controllerFiles.length > 0) {
+      const functionName = this.generateFunctionName(endpointPath, httpMethod);
+      steps.push({
+        id: `step_${++counter}`,
+        type: "create",
+        description: `Create ${functionName} function in ${controllerFiles[0]}`,
+        tool: "code_analysis",
+        args: {
+          operation: "smart_insert",
+          file_path: controllerFiles[0],
+          code: `// Controller function for ${httpMethod} ${endpointPath}`,
+          location: "end",
+          target: functionName
+        },
+        dependencies: [`step_${counter - 1}`],
+        estimatedDuration: 4e3,
+        riskLevel: "medium",
+        status: "pending"
+      });
+    }
+    if (serviceFiles.length > 0) {
+      const methodName = this.generateServiceMethodName(endpointPath, httpMethod);
+      steps.push({
+        id: `step_${++counter}`,
+        type: "create",
+        description: `Add ${methodName} method to ${serviceFiles[0]}`,
+        tool: "code_analysis",
+        args: {
+          operation: "smart_insert",
+          file_path: serviceFiles[0],
+          code: `// Service method for ${httpMethod} ${endpointPath}`,
+          location: "end",
+          target: methodName
+        },
+        dependencies: [`step_${counter - 1}`],
+        estimatedDuration: 4e3,
+        riskLevel: "medium",
+        status: "pending"
+      });
+    }
+    if (routeFiles.length > 0 && controllerFiles.length > 0) {
+      steps.push({
+        id: `step_${++counter}`,
+        type: "refactor",
+        description: "Update import statements in affected files",
+        tool: "code_analysis",
+        args: {
+          operation: "add_imports",
+          file_path: routeFiles[0],
+          symbols: [this.generateFunctionName(endpointPath, httpMethod)]
+        },
+        dependencies: [`step_${counter - 1}`],
+        estimatedDuration: 2e3,
+        riskLevel: "low",
+        status: "pending"
+      });
+    }
+    return steps;
+  }
+  /**
+   * Generate function name from endpoint path and HTTP method
+   */
+  generateFunctionName(path25, method) {
+    const parts = path25.split("/").filter(Boolean);
+    const resource = parts[parts.length - 1]?.replace(/[^a-zA-Z0-9]/g, "") || "resource";
+    const action = method.toLowerCase();
+    if (action === "get" && path25.includes(":")) {
+      return `get${this.capitalize(resource)}ById`;
+    } else if (action === "get") {
+      return `get${this.capitalize(resource)}s`;
+    } else if (action === "post") {
+      return `create${this.capitalize(resource)}`;
+    } else if (action === "put" || action === "patch") {
+      return `update${this.capitalize(resource)}`;
+    } else if (action === "delete") {
+      return `delete${this.capitalize(resource)}`;
+    }
+    return `${action}${this.capitalize(resource)}`;
+  }
+  /**
+   * Generate service method name from endpoint path and HTTP method
+   */
+  generateServiceMethodName(path25, method) {
+    const parts = path25.split("/").filter(Boolean);
+    const resource = parts[parts.length - 1]?.replace(/[^a-zA-Z0-9]/g, "") || "resource";
+    const action = method.toLowerCase();
+    if (action === "get" && path25.includes(":")) {
+      return `find${this.capitalize(resource)}ById`;
+    } else if (action === "get") {
+      return `findAll${this.capitalize(resource)}s`;
+    } else if (action === "post") {
+      return `create${this.capitalize(resource)}`;
+    } else if (action === "put" || action === "patch") {
+      return `update${this.capitalize(resource)}`;
+    } else if (action === "delete") {
+      return `delete${this.capitalize(resource)}`;
+    }
+    return `${action}${this.capitalize(resource)}`;
+  }
+  /**
+   * Capitalize first letter of string
+   */
+  capitalize(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
   }
   /**
    * Generate refactoring steps
    */
-  generateRefactoringSteps(analysis, startCounter) {
+  async generateRefactoringSteps(analysis, startCounter, _userRequest) {
     const steps = [];
     let counter = startCounter;
     steps.push({
@@ -4803,7 +5086,7 @@ var TaskPlanner = class {
       description: "Analyze dependencies and impact",
       tool: "dependency_analyzer",
       args: { operation: "analyze_dependencies", files: analysis.scope.files },
-      dependencies: ["step_1"],
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 3e3,
       riskLevel: "low",
       status: "pending"
@@ -4823,8 +5106,16 @@ var TaskPlanner = class {
       id: `step_${++counter}`,
       type: "refactor",
       description: "Update import statements",
-      tool: "multi_file_editor",
-      args: { operation: "update_imports" },
+      tool: "multi_file_edit",
+      args: {
+        operation: "execute_multi_file",
+        operations: analysis.scope.files.map((file) => ({
+          type: "edit",
+          filePath: file,
+          description: "Update imports after refactoring"
+        })),
+        description: "Update imports in affected files"
+      },
       dependencies: [`step_${counter - 1}`],
       estimatedDuration: 2e3,
       riskLevel: "low",
@@ -4835,7 +5126,7 @@ var TaskPlanner = class {
   /**
    * Generate move steps
    */
-  generateMoveSteps(analysis, startCounter) {
+  async generateMoveSteps(analysis, startCounter, _userRequest) {
     const steps = [];
     let counter = startCounter;
     for (const symbol of analysis.scope.symbols) {
@@ -4856,14 +5147,14 @@ var TaskPlanner = class {
   /**
    * Generate extract steps
    */
-  generateExtractSteps(analysis, startCounter) {
+  async generateExtractSteps(analysis, startCounter, _userRequest) {
     return [{
       id: `step_${startCounter + 1}`,
       type: "refactor",
       description: "Extract code into new function",
       tool: "refactoring_assistant",
       args: { operation: "extract_function" },
-      dependencies: ["step_1"],
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 3e3,
       riskLevel: "low",
       status: "pending"
@@ -4872,14 +5163,14 @@ var TaskPlanner = class {
   /**
    * Generate rename steps
    */
-  generateRenameSteps(analysis, startCounter) {
+  async generateRenameSteps(analysis, startCounter, _userRequest) {
     return [{
       id: `step_${startCounter + 1}`,
       type: "refactor",
       description: "Rename symbol across codebase",
       tool: "refactoring_assistant",
       args: { operation: "rename_symbol" },
-      dependencies: ["step_1"],
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 3e3,
       riskLevel: "low",
       status: "pending"
@@ -4888,14 +5179,14 @@ var TaskPlanner = class {
   /**
    * Generate create steps
    */
-  generateCreateSteps(analysis, startCounter) {
+  async generateCreateSteps(analysis, startCounter, _userRequest) {
     return [{
       id: `step_${startCounter + 1}`,
       type: "create",
       description: "Create new files and code",
-      tool: "code_aware_editor",
-      args: { operation: "create" },
-      dependencies: ["step_1"],
+      tool: "code_analysis",
+      args: { operation: "smart_insert" },
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 2e3,
       riskLevel: "low",
       status: "pending"
@@ -4904,14 +5195,21 @@ var TaskPlanner = class {
   /**
    * Generate remove steps
    */
-  generateRemoveSteps(analysis, startCounter) {
+  async generateRemoveSteps(analysis, startCounter, _userRequest) {
     return [{
       id: `step_${startCounter + 1}`,
       type: "delete",
       description: "Remove files and clean up references",
-      tool: "multi_file_editor",
-      args: { operation: "delete", files: analysis.scope.files },
-      dependencies: ["step_1"],
+      tool: "multi_file_edit",
+      args: {
+        operation: "execute_multi_file",
+        operations: analysis.scope.files.map((file) => ({
+          type: "delete",
+          filePath: file
+        })),
+        description: "Remove files and clean up"
+      },
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 2e3,
       riskLevel: "high",
       status: "pending"
@@ -4920,14 +5218,14 @@ var TaskPlanner = class {
   /**
    * Generate generic steps
    */
-  generateGenericSteps(analysis, startCounter) {
+  async generateGenericSteps(analysis, startCounter, _userRequest) {
     return [{
       id: `step_${startCounter + 1}`,
       type: "refactor",
       description: "Execute requested operation",
       tool: "str_replace_editor",
       args: {},
-      dependencies: ["step_1"],
+      dependencies: analysis.scope.files.length > 0 ? ["step_1"] : [],
       estimatedDuration: 3e3,
       riskLevel: "medium",
       status: "pending"
@@ -4945,7 +5243,7 @@ var TaskPlanner = class {
     if (maxRisk >= 2) return "medium";
     return "low";
   }
-  detectCircularDependencies(steps) {
+  detectCircularDependencies(_steps) {
     return [];
   }
   detectMissingDependencies(steps) {
@@ -10868,6 +11166,9 @@ var GrokAgent = class extends EventEmitter {
     this.maxConcurrentToolCalls = 2;
     this.minRequestInterval = 500;
     this.planExecutionInProgress = false;
+    // Self-correction tracking
+    this.toolRetryCount = /* @__PURE__ */ new Map();
+    this.maxRetries = 3;
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
@@ -10907,6 +11208,38 @@ var GrokAgent = class extends EventEmitter {
     this.taskOrchestrator.on("phase", (data) => {
       this.emit("plan_phase", data);
     });
+    this.fallbackStrategies = /* @__PURE__ */ new Map([
+      ["refactoring_assistant", {
+        fallbackTools: ["multi_file_edit", "code_analysis", "str_replace_editor"],
+        strategy: "decompose_and_retry",
+        description: "Break down refactoring into smaller file edits"
+      }],
+      ["multi_file_edit", {
+        fallbackTools: ["str_replace_editor"],
+        strategy: "sequential_execution",
+        description: "Execute file edits one at a time"
+      }],
+      ["code_analysis", {
+        fallbackTools: ["str_replace_editor", "bash"],
+        strategy: "simpler_tool",
+        description: "Use simpler text editing tools"
+      }],
+      ["advanced_search", {
+        fallbackTools: ["search", "bash"],
+        strategy: "bash_fallback",
+        description: "Fall back to grep/find commands"
+      }],
+      ["symbol_search", {
+        fallbackTools: ["search", "bash"],
+        strategy: "bash_fallback",
+        description: "Use text-based search instead of AST"
+      }],
+      ["dependency_analyzer", {
+        fallbackTools: ["search", "bash"],
+        strategy: "bash_fallback",
+        description: "Use grep to find imports"
+      }]
+    ]);
     this.initializeMCP();
     const customInstructions = loadCustomInstructions();
     const customInstructionsSection = customInstructions ? `
@@ -11532,7 +11865,12 @@ EOF`;
         case "code_context":
           return await this.codeContext.execute(args);
         case "refactoring_assistant":
-          return await this.refactoringAssistant.execute(args);
+          try {
+            return await this.refactoringAssistant.execute(args);
+          } catch (error) {
+            console.warn(`refactoring_assistant failed: ${error.message}. Attempting fallback...`);
+            return await this.attemptFallback(toolCall, error);
+          }
         case "task_planner":
           const plannerResult = await this.taskPlanner.execute(args);
           if (args.operation === "create_plan" && plannerResult.success && args.autoExecute) {
@@ -11565,6 +11903,11 @@ ${JSON.stringify(executionResult, null, 2)}` : `Plan execution failed: ${executi
           };
       }
     } catch (error) {
+      console.warn(`Tool ${toolCall.function.name} failed: ${error.message}`);
+      if (this.fallbackStrategies.has(toolCall.function.name)) {
+        console.log(`Attempting self-correction for ${toolCall.function.name}...`);
+        return await this.attemptFallback(toolCall, error);
+      }
       return {
         success: false,
         error: `Tool execution error: ${error.message}`
@@ -11736,6 +12079,189 @@ ${planPreview}`,
    */
   isPlanExecutionInProgress() {
     return this.planExecutionInProgress;
+  }
+  /**
+   * Self-Correction: Attempt fallback strategy when a tool fails
+   */
+  async attemptFallback(toolCall, originalError) {
+    const toolName = toolCall.function.name;
+    const retryKey = `${toolName}_${toolCall.id}`;
+    const currentRetries = this.toolRetryCount.get(retryKey) || 0;
+    if (currentRetries >= this.maxRetries) {
+      this.toolRetryCount.delete(retryKey);
+      return {
+        success: false,
+        error: `Tool ${toolName} failed after ${this.maxRetries} retry attempts: ${originalError.message}`
+      };
+    }
+    this.toolRetryCount.set(retryKey, currentRetries + 1);
+    const strategy = this.fallbackStrategies.get(toolName);
+    if (!strategy) {
+      return {
+        success: false,
+        error: `No fallback strategy available for ${toolName}: ${originalError.message}`
+      };
+    }
+    console.log(`\u{1F504} Self-correction attempt ${currentRetries + 1}/${this.maxRetries} for ${toolName}`);
+    console.log(`   Strategy: ${strategy.description}`);
+    try {
+      const result = await this.executeFallbackStrategy(toolCall, strategy, originalError);
+      if (result.success) {
+        this.toolRetryCount.delete(retryKey);
+        console.log(`\u2705 Self-correction successful for ${toolName}`);
+      }
+      return result;
+    } catch (fallbackError) {
+      console.warn(`\u274C Fallback attempt ${currentRetries + 1} failed: ${fallbackError.message}`);
+      if (currentRetries + 1 < this.maxRetries) {
+        const backoffMs = Math.pow(2, currentRetries) * 1e3;
+        console.log(`   Waiting ${backoffMs}ms before next retry...`);
+        await new Promise((resolve8) => setTimeout(resolve8, backoffMs));
+        return await this.attemptFallback(toolCall, originalError);
+      }
+      this.toolRetryCount.delete(retryKey);
+      return {
+        success: false,
+        error: `All fallback attempts failed for ${toolName}: ${fallbackError.message}`
+      };
+    }
+  }
+  /**
+   * Execute a specific fallback strategy
+   */
+  async executeFallbackStrategy(originalToolCall, strategy, originalError) {
+    const args = JSON.parse(originalToolCall.function.arguments);
+    switch (strategy.strategy) {
+      case "decompose_and_retry":
+        return await this.decomposeAndRetry(originalToolCall, strategy, args);
+      case "sequential_execution":
+        return await this.sequentialExecution(originalToolCall, strategy, args);
+      case "simpler_tool":
+        return await this.useSimplerTool(originalToolCall, strategy, args);
+      case "bash_fallback":
+        return await this.bashFallback(originalToolCall, strategy, args, originalError);
+      default:
+        return {
+          success: false,
+          error: `Unknown fallback strategy: ${strategy.strategy}`
+        };
+    }
+  }
+  /**
+   * Decompose complex operation into smaller steps
+   */
+  async decomposeAndRetry(originalToolCall, strategy, args) {
+    const toolName = originalToolCall.function.name;
+    if (toolName === "refactoring_assistant") {
+      console.log("   Breaking down refactoring into file edits...");
+      const fallbackTool = strategy.fallbackTools[0];
+      const fallbackCall = {
+        id: `fallback_${originalToolCall.id}`,
+        type: "function",
+        function: {
+          name: fallbackTool,
+          arguments: JSON.stringify({
+            operation: "execute_multi_file",
+            operations: args.scope?.files?.map((file) => ({
+              type: "edit",
+              filePath: file,
+              description: `Refactor ${file}`
+            })) || [],
+            description: "Refactoring via multi-file edit fallback"
+          })
+        }
+      };
+      return await this.executeTool(fallbackCall);
+    }
+    return {
+      success: false,
+      error: "Decompose strategy not implemented for this tool"
+    };
+  }
+  /**
+   * Execute operations sequentially instead of in batch
+   */
+  async sequentialExecution(originalToolCall, strategy, args) {
+    const toolName = originalToolCall.function.name;
+    if (toolName === "multi_file_edit" && args.operations) {
+      console.log(`   Executing ${args.operations.length} operations sequentially...`);
+      const results = [];
+      const fallbackTool = strategy.fallbackTools[0];
+      for (const op of args.operations) {
+        const fallbackCall = {
+          id: `fallback_seq_${Date.now()}`,
+          type: "function",
+          function: {
+            name: fallbackTool,
+            arguments: JSON.stringify({
+              path: op.filePath,
+              old_str: op.old_str || "",
+              new_str: op.new_str || op.content || "",
+              replace_all: false
+            })
+          }
+        };
+        const result = await this.executeTool(fallbackCall);
+        results.push(result);
+        if (!result.success) {
+          return {
+            success: false,
+            error: `Sequential execution failed at operation ${results.length}: ${result.error}`
+          };
+        }
+      }
+      return {
+        success: true,
+        output: `Successfully executed ${results.length} operations sequentially`
+      };
+    }
+    return {
+      success: false,
+      error: "Sequential execution not applicable for this tool"
+    };
+  }
+  /**
+   * Use a simpler tool as fallback
+   */
+  async useSimplerTool(originalToolCall, strategy, args) {
+    console.log(`   Using simpler tool: ${strategy.fallbackTools[0]}...`);
+    const fallbackTool = strategy.fallbackTools[0];
+    const fallbackCall = {
+      id: `fallback_simple_${originalToolCall.id}`,
+      type: "function",
+      function: {
+        name: fallbackTool,
+        arguments: JSON.stringify(args)
+      }
+    };
+    return await this.executeTool(fallbackCall);
+  }
+  /**
+   * Fall back to bash commands
+   */
+  async bashFallback(originalToolCall, _strategy, args, originalError) {
+    const toolName = originalToolCall.function.name;
+    console.log("   Falling back to bash commands...");
+    try {
+      if (toolName === "symbol_search" || toolName === "advanced_search") {
+        const query = args.query || args.pattern || "";
+        const command = `grep -r "${query}" . --include="*.ts" --include="*.js" --include="*.py" -n`;
+        return await this.bash.execute(command);
+      }
+      if (toolName === "dependency_analyzer") {
+        const command = `grep -r "^import\\|^from\\|require(" . --include="*.ts" --include="*.js" --include="*.py" -n`;
+        return await this.bash.execute(command);
+      }
+      return {
+        success: false,
+        error: `Bash fallback not implemented for ${toolName}: ${originalError.message}`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Bash fallback failed: ${error.message}`
+      };
+    }
   }
 };
 

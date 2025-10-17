@@ -4,7 +4,7 @@ import fs__default, { existsSync } from 'fs';
 import * as path10 from 'path';
 import path10__default from 'path';
 import * as os from 'os';
-import React2, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React3, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { program, Command } from 'commander';
 import * as dotenv from 'dotenv';
@@ -58,7 +58,17 @@ var init_settings_manager = __esm({
         "grok-3-latest",
         "grok-3-fast",
         "grok-3-mini-fast"
-      ]
+      ],
+      timeout: 36e4,
+      // 6 minutes for standard requests
+      streamTimeout: 36e5,
+      // 1 hour for reasoning models (as per xAI docs)
+      temperature: 0.7,
+      maxTokens: 1536,
+      parallelToolCalls: true,
+      // Enable parallel tool execution by default
+      maxConcurrentTools: 3
+      // Default batch size for parallel execution
     };
     DEFAULT_PROJECT_SETTINGS = {
       model: "grok-code-fast-1"
@@ -126,7 +136,7 @@ var init_settings_manager = __esm({
               const content = fs.readFileSync(this.userSettingsPath, "utf-8");
               const parsed = JSON.parse(content);
               existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
-            } catch (error) {
+            } catch {
               console.warn("Corrupted user settings file, using defaults");
             }
           }
@@ -191,7 +201,7 @@ var init_settings_manager = __esm({
               const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
               const parsed = JSON.parse(content);
               existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
-            } catch (error) {
+            } catch {
               console.warn("Corrupted project settings file, using defaults");
             }
           }
@@ -273,6 +283,95 @@ var init_settings_manager = __esm({
         const userBaseURL = this.getUserSetting("baseURL");
         return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1";
       }
+      /**
+       * Get timeout from settings or environment
+       * Priority: project setting > user setting > environment > default
+       */
+      getTimeout() {
+        const envTimeout = Number(process.env.GROK_TIMEOUT);
+        if (Number.isFinite(envTimeout) && envTimeout > 0) {
+          return envTimeout;
+        }
+        const projectTimeout = this.getProjectSetting("timeout");
+        if (projectTimeout) {
+          return projectTimeout;
+        }
+        const userTimeout = this.getUserSetting("timeout");
+        return userTimeout || DEFAULT_USER_SETTINGS.timeout || 36e4;
+      }
+      /**
+       * Get streaming timeout from settings or environment
+       * Priority: project setting > user setting > environment > default
+       * xAI recommends 3600000ms (1 hour) for reasoning models
+       */
+      getStreamTimeout() {
+        const envStreamTimeout = Number(process.env.GROK_STREAM_TIMEOUT);
+        if (Number.isFinite(envStreamTimeout) && envStreamTimeout > 0) {
+          return envStreamTimeout;
+        }
+        const projectStreamTimeout = this.getProjectSetting("streamTimeout");
+        if (projectStreamTimeout) {
+          return projectStreamTimeout;
+        }
+        const userStreamTimeout = this.getUserSetting("streamTimeout");
+        return userStreamTimeout || DEFAULT_USER_SETTINGS.streamTimeout || 36e5;
+      }
+      /**
+       * Get temperature from settings or environment
+       * Priority: project setting > user setting > environment > default
+       */
+      getTemperature() {
+        const envTemperature = Number(process.env.GROK_TEMPERATURE);
+        if (Number.isFinite(envTemperature) && envTemperature >= 0) {
+          return envTemperature;
+        }
+        const projectTemperature = this.getProjectSetting("temperature");
+        if (projectTemperature !== void 0) {
+          return projectTemperature;
+        }
+        const userTemperature = this.getUserSetting("temperature");
+        return userTemperature !== void 0 ? userTemperature : DEFAULT_USER_SETTINGS.temperature || 0.7;
+      }
+      /**
+       * Get max tokens from settings or environment
+       * Priority: project setting > user setting > environment > default
+       */
+      getMaxTokens() {
+        const envMaxTokens = Number(process.env.GROK_MAX_TOKENS);
+        if (Number.isFinite(envMaxTokens) && envMaxTokens > 0) {
+          return envMaxTokens;
+        }
+        const projectMaxTokens = this.getProjectSetting("maxTokens");
+        if (projectMaxTokens) {
+          return projectMaxTokens;
+        }
+        const userMaxTokens = this.getUserSetting("maxTokens");
+        return userMaxTokens || DEFAULT_USER_SETTINGS.maxTokens || 1536;
+      }
+      /**
+       * Get parallel tool calls setting
+       * Priority: project setting > user setting > default
+       */
+      getParallelToolCalls() {
+        const projectParallel = this.getProjectSetting("parallelToolCalls");
+        if (projectParallel !== void 0) {
+          return projectParallel;
+        }
+        const userParallel = this.getUserSetting("parallelToolCalls");
+        return userParallel !== void 0 ? userParallel : DEFAULT_USER_SETTINGS.parallelToolCalls || true;
+      }
+      /**
+       * Get max concurrent tools setting
+       * Priority: project setting > user setting > default
+       */
+      getMaxConcurrentTools() {
+        const projectMax = this.getProjectSetting("maxConcurrentTools");
+        if (projectMax) {
+          return projectMax;
+        }
+        const userMax = this.getUserSetting("maxConcurrentTools");
+        return userMax || DEFAULT_USER_SETTINGS.maxConcurrentTools || 3;
+      }
     };
   }
 });
@@ -330,15 +429,19 @@ var init_config = __esm({
   }
 });
 var GrokClient = class {
-  constructor(apiKey, model, baseURL) {
+  constructor(apiKey, model, baseURL, options) {
     this.currentModel = "grok-code-fast-1";
+    const timeout = options?.timeout || 36e4;
     this.client = new OpenAI({
       apiKey,
       baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-      timeout: 36e4
+      timeout
     });
+    this.defaultTimeout = timeout;
+    this.defaultStreamTimeout = options?.streamTimeout || 36e5;
+    this.defaultTemperature = options?.temperature || 0.7;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
-    this.defaultMaxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 1536;
+    this.defaultMaxTokens = options?.maxTokens || (Number.isFinite(envMax) && envMax > 0 ? envMax : 1536);
     if (model) {
       this.currentModel = model;
     }
@@ -349,15 +452,16 @@ var GrokClient = class {
   getCurrentModel() {
     return this.currentModel;
   }
-  async chat(messages, tools, model, searchOptions) {
+  async chat(messages, tools, model, searchOptions, toolChoice) {
     try {
       const requestPayload = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : void 0,
-        temperature: 0.7,
-        max_tokens: this.defaultMaxTokens
+        tool_choice: toolChoice || (tools && tools.length > 0 ? "auto" : void 0),
+        temperature: this.defaultTemperature,
+        max_tokens: this.defaultMaxTokens,
+        timeout: this.defaultTimeout
       };
       if (searchOptions?.search_parameters) {
         requestPayload.search_parameters = searchOptions.search_parameters;
@@ -368,16 +472,18 @@ var GrokClient = class {
       throw new Error(`Grok API error: ${error.message}`);
     }
   }
-  async *chatStream(messages, tools, model, searchOptions) {
+  async *chatStream(messages, tools, model, searchOptions, toolChoice) {
     try {
       const requestPayload = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : void 0,
-        temperature: 0.7,
+        tool_choice: toolChoice || (tools && tools.length > 0 ? "auto" : void 0),
+        temperature: this.defaultTemperature,
         max_tokens: this.defaultMaxTokens,
-        stream: true
+        stream: true,
+        // Use extended timeout for streaming (especially for reasoning models)
+        timeout: this.defaultStreamTimeout
       };
       if (searchOptions?.search_parameters) {
         requestPayload.search_parameters = searchOptions.search_parameters;
@@ -11281,7 +11387,15 @@ var GrokAgent = class extends EventEmitter {
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
     this.sessionLogPath = process.env.GROK_SESSION_LOG || `${process.env.HOME}/.grok/session.log`;
-    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
+    const clientOptions = {
+      timeout: manager.getTimeout(),
+      streamTimeout: manager.getStreamTimeout(),
+      temperature: manager.getTemperature(),
+      maxTokens: manager.getMaxTokens()
+    };
+    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, clientOptions);
+    const parallelEnabled = manager.getParallelToolCalls();
+    this.maxConcurrentToolCalls = parallelEnabled ? manager.getMaxConcurrentTools() : 1;
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();
@@ -16589,7 +16703,7 @@ Respond with ONLY the commit message, no additional text.`;
           if (chunk.type === "content" && chunk.content) {
             accumulatedCommitContent += chunk.content;
             const now = Date.now();
-            if (now - lastCommitUpdateTime >= 150) {
+            if (now - lastCommitUpdateTime >= 100) {
               commitMessage += accumulatedCommitContent;
               if (!streamingEntry) {
                 const newEntry = {
@@ -17314,7 +17428,7 @@ ${incidents.slice(0, 3).map((i) => `- ${i.title} (${i.impact} impact)`).join("\n
       let lastUpdateTime = Date.now();
       const flushUpdates = () => {
         const now = Date.now();
-        if (now - lastUpdateTime < 150) return;
+        if (now - lastUpdateTime < 100) return;
         if (lastTokenCount !== 0) {
           setTokenCount(lastTokenCount);
         }
@@ -17446,19 +17560,60 @@ ${incidents.slice(0, 3).map((i) => `- ${i.title} (${i.impact} impact)`).join("\n
     autoEditEnabled
   };
 }
+var spinnerFrames = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+var loadingTexts = [
+  "Thinking...",
+  "Processing...",
+  "Analyzing...",
+  "Working...",
+  "Computing...",
+  "Generating...",
+  "Herding electrons...",
+  "Combobulating...",
+  "Discombobulating...",
+  "Recombobulating...",
+  "Calibrating flux capacitors...",
+  "Reticulating splines...",
+  "Adjusting bell curves...",
+  "Optimizing bit patterns...",
+  "Harmonizing frequencies...",
+  "Synchronizing timelines...",
+  "Defragmenting thoughts...",
+  "Compiling wisdom...",
+  "Bootstrapping reality...",
+  "Untangling quantum states...",
+  "Negotiating with servers...",
+  "Convincing pixels to cooperate...",
+  "Summoning digital spirits...",
+  "Caffeinating algorithms...",
+  "Debugging the universe..."
+];
 function LoadingSpinner({
   isActive,
   processingTime,
   tokenCount
 }) {
+  const [frame, setFrame] = useState(0);
+  const [textIndex, setTextIndex] = useState(0);
+  useEffect(() => {
+    if (!isActive) return;
+    const spinnerInterval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+    }, 80);
+    const textInterval = setInterval(() => {
+      setTextIndex((prev) => (prev + 1) % loadingTexts.length);
+    }, 3e3);
+    return () => {
+      clearInterval(spinnerInterval);
+      clearInterval(textInterval);
+    };
+  }, [isActive]);
   if (!isActive) return null;
-  const staticSpinner = "\u280B";
-  const staticText = "Processing...";
   return /* @__PURE__ */ jsxs(Box, { marginTop: 1, children: [
     /* @__PURE__ */ jsxs(Text, { color: "blue", children: [
-      staticSpinner,
+      spinnerFrames[frame],
       " ",
-      staticText
+      loadingTexts[textIndex]
     ] }),
     /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
       " ",
@@ -17607,6 +17762,9 @@ var renderDiffContent = (parsedLines, filename, tabWidth = DEFAULT_TAB_WIDTH, av
   if (displayableLines.length === 0) {
     return /* @__PURE__ */ jsx(Text, { dimColor: true, children: "No changes detected." });
   }
+  const maxDiffLines = 20;
+  const shouldTruncateDiff = displayableLines.length > maxDiffLines;
+  const linesToDisplay = shouldTruncateDiff ? displayableLines.slice(0, maxDiffLines) : displayableLines;
   let baseIndentation = Infinity;
   for (const line of displayableLines) {
     if (line.content.trim() === "") continue;
@@ -17620,87 +17778,133 @@ var renderDiffContent = (parsedLines, filename, tabWidth = DEFAULT_TAB_WIDTH, av
   const key = filename ? `diff-box-${filename}` : `diff-box-${crypto.createHash("sha1").update(JSON.stringify(parsedLines)).digest("hex")}`;
   let lastLineNumber = null;
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;
-  return /* @__PURE__ */ jsx(
+  return /* @__PURE__ */ jsxs(
     MaxSizedBox,
     {
       maxHeight: availableTerminalHeight,
       maxWidth: terminalWidth,
-      children: displayableLines.reduce((acc, line, index) => {
-        let relevantLineNumberForGapCalc = null;
-        if (line.type === "add" || line.type === "context") {
-          relevantLineNumberForGapCalc = line.newLine ?? null;
-        } else if (line.type === "del") {
-          relevantLineNumberForGapCalc = line.oldLine ?? null;
-        }
-        if (lastLineNumber !== null && relevantLineNumberForGapCalc !== null && relevantLineNumberForGapCalc > lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1) {
+      children: [
+        linesToDisplay.reduce((acc, line, index) => {
+          let relevantLineNumberForGapCalc = null;
+          if (line.type === "add" || line.type === "context") {
+            relevantLineNumberForGapCalc = line.newLine ?? null;
+          } else if (line.type === "del") {
+            relevantLineNumberForGapCalc = line.oldLine ?? null;
+          }
+          if (lastLineNumber !== null && relevantLineNumberForGapCalc !== null && relevantLineNumberForGapCalc > lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1) {
+            acc.push(
+              /* @__PURE__ */ jsx(Box, { children: /* @__PURE__ */ jsx(Text, { wrap: "truncate", children: "\u2550".repeat(terminalWidth) }) }, `gap-${index}`)
+            );
+          }
+          const lineKey = `diff-line-${index}`;
+          let gutterNumStr = "";
+          let backgroundColor = void 0;
+          let prefixSymbol = " ";
+          let dim = false;
+          switch (line.type) {
+            case "add":
+              gutterNumStr = (line.newLine ?? "").toString();
+              backgroundColor = "#86efac";
+              prefixSymbol = "+";
+              lastLineNumber = line.newLine ?? null;
+              break;
+            case "del":
+              gutterNumStr = (line.oldLine ?? "").toString();
+              backgroundColor = "redBright";
+              prefixSymbol = "-";
+              if (line.oldLine !== void 0) {
+                lastLineNumber = line.oldLine;
+              }
+              break;
+            case "context":
+              gutterNumStr = (line.newLine ?? "").toString();
+              dim = true;
+              prefixSymbol = " ";
+              lastLineNumber = line.newLine ?? null;
+              break;
+            default:
+              return acc;
+          }
+          const displayContent = line.content.substring(baseIndentation);
           acc.push(
-            /* @__PURE__ */ jsx(Box, { children: /* @__PURE__ */ jsx(Text, { wrap: "truncate", children: "\u2550".repeat(terminalWidth) }) }, `gap-${index}`)
+            /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+              /* @__PURE__ */ jsx(Text, { color: Colors.Gray, dimColor: dim, children: gutterNumStr.padEnd(4) }),
+              /* @__PURE__ */ jsxs(Text, { color: backgroundColor ? "#000000" : void 0, backgroundColor, dimColor: !backgroundColor && dim, children: [
+                prefixSymbol,
+                " "
+              ] }),
+              /* @__PURE__ */ jsx(Text, { color: backgroundColor ? "#000000" : void 0, backgroundColor, dimColor: !backgroundColor && dim, wrap: "wrap", children: displayContent })
+            ] }, lineKey)
           );
-        }
-        const lineKey = `diff-line-${index}`;
-        let gutterNumStr = "";
-        let backgroundColor = void 0;
-        let prefixSymbol = " ";
-        let dim = false;
-        switch (line.type) {
-          case "add":
-            gutterNumStr = (line.newLine ?? "").toString();
-            backgroundColor = "#86efac";
-            prefixSymbol = "+";
-            lastLineNumber = line.newLine ?? null;
-            break;
-          case "del":
-            gutterNumStr = (line.oldLine ?? "").toString();
-            backgroundColor = "redBright";
-            prefixSymbol = "-";
-            if (line.oldLine !== void 0) {
-              lastLineNumber = line.oldLine;
-            }
-            break;
-          case "context":
-            gutterNumStr = (line.newLine ?? "").toString();
-            dim = true;
-            prefixSymbol = " ";
-            lastLineNumber = line.newLine ?? null;
-            break;
-          default:
-            return acc;
-        }
-        const displayContent = line.content.substring(baseIndentation);
-        acc.push(
-          /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
-            /* @__PURE__ */ jsx(Text, { color: Colors.Gray, dimColor: dim, children: gutterNumStr.padEnd(4) }),
-            /* @__PURE__ */ jsxs(Text, { color: backgroundColor ? "#000000" : void 0, backgroundColor, dimColor: !backgroundColor && dim, children: [
-              prefixSymbol,
-              " "
-            ] }),
-            /* @__PURE__ */ jsx(Text, { color: backgroundColor ? "#000000" : void 0, backgroundColor, dimColor: !backgroundColor && dim, wrap: "wrap", children: displayContent })
-          ] }, lineKey)
-        );
-        return acc;
-      }, [])
+          return acc;
+        }, []),
+        shouldTruncateDiff && /* @__PURE__ */ jsx(Box, { marginTop: 1, children: /* @__PURE__ */ jsxs(Text, { color: "cyan", dimColor: true, children: [
+          "... (",
+          displayableLines.length - maxDiffLines,
+          " more lines not shown)"
+        ] }) })
+      ]
     },
     key
   );
 };
 marked.setOptions({
-  renderer: new TerminalRenderer()
+  renderer: new TerminalRenderer({
+    // Optimize for terminal display
+    code: (code) => code,
+    // Simplified code rendering
+    blockquote: (quote) => `  ${quote}`,
+    // Simplified blockquote
+    html: () => "",
+    // Strip HTML
+    heading: (text, level) => {
+      const prefix = "#".repeat(level);
+      return `${prefix} ${text}
+`;
+    },
+    hr: () => "\u2500".repeat(40) + "\n",
+    // Simplified horizontal rule
+    list: (body) => body,
+    // Simplified list
+    listitem: (text) => `  \u2022 ${text}
+`,
+    // Simplified list item
+    paragraph: (text) => `${text}
+`,
+    // Simplified paragraph
+    table: (header, body) => `${header}${body}`,
+    // Simplified table
+    tablerow: (content) => `${content}
+`,
+    // Simplified table row
+    tablecell: (content) => `${content} `
+    // Simplified table cell
+  })
 });
 function MarkdownRenderer({ content }) {
   try {
     const result = marked.parse(content);
     const rendered = typeof result === "string" ? result : content;
-    return /* @__PURE__ */ jsx(Text, { children: rendered });
+    const lines = rendered.split("\n");
+    return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: lines.map((line, index) => /* @__PURE__ */ jsx(Text, { children: line }, index)) });
   } catch (error) {
-    console.error("Markdown rendering error:", error);
+    if (process.env.DEBUG === "1") {
+      console.error("Markdown rendering error:", error);
+    }
     return /* @__PURE__ */ jsx(Text, { children: content });
   }
 }
-var truncateContent = (content, maxLength = 100) => {
-  if (process.env.COMPACT !== "1") return content;
-  return content.length > maxLength ? content.substring(0, maxLength) + "..." : content;
+var truncateContent = (content, maxLines = 15) => {
+  const lines = content.split("\n");
+  if (lines.length <= maxLines) {
+    return content;
+  }
+  const truncatedLines = lines.slice(0, maxLines);
+  const remainingLines = lines.length - maxLines;
+  return truncatedLines.join("\n") + `
+... (${remainingLines} more lines)`;
 };
-var MemoizedChatEntry = React2.memo(
+var MemoizedChatEntry = React3.memo(
   ({ entry, index }) => {
     const renderDiff = (diffContent, filename) => {
       return /* @__PURE__ */ jsx(
@@ -17714,6 +17918,9 @@ var MemoizedChatEntry = React2.memo(
     };
     const renderFileContent = (content) => {
       const lines = content.split("\n");
+      const maxLinesToShow = 10;
+      const totalLines = lines.length;
+      const shouldTruncate = totalLines > maxLinesToShow;
       let baseIndentation = Infinity;
       for (const line of lines) {
         if (line.trim() === "") continue;
@@ -17724,10 +17931,18 @@ var MemoizedChatEntry = React2.memo(
       if (!isFinite(baseIndentation)) {
         baseIndentation = 0;
       }
-      return lines.map((line, index2) => {
-        const displayContent = line.substring(baseIndentation);
-        return /* @__PURE__ */ jsx(Text, { color: "gray", children: displayContent }, index2);
-      });
+      const linesToDisplay = shouldTruncate ? lines.slice(0, maxLinesToShow) : lines;
+      return /* @__PURE__ */ jsxs(Fragment, { children: [
+        linesToDisplay.map((line, index2) => {
+          const displayContent = line.substring(baseIndentation);
+          return /* @__PURE__ */ jsx(Text, { color: "gray", children: displayContent }, index2);
+        }),
+        shouldTruncate && /* @__PURE__ */ jsxs(Text, { color: "cyan", dimColor: true, children: [
+          "... (",
+          totalLines - maxLinesToShow,
+          " more lines)"
+        ] })
+      ] });
     };
     switch (entry.type) {
       case "user":
@@ -17859,7 +18074,7 @@ function ChatHistory({
       entry,
       index
     },
-    `${entry.timestamp.getTime()}-${index}`
+    entry.timestamp.getTime()
   )) });
 }
 function ChatInput({
@@ -18990,7 +19205,7 @@ program.name("grok").description(
     console.log("\u{1F916} Starting Grok CLI Conversational Assistant...\n");
     ensureUserSettingsDirectory();
     const initialMessage = Array.isArray(message) ? message.join(" ") : message;
-    const app = render(React2.createElement(ChatInterface, { agent, initialMessage }));
+    const app = render(React3.createElement(ChatInterface, { agent, initialMessage }));
     const cleanup = () => {
       app.unmount();
       agent.abortCurrentOperation();

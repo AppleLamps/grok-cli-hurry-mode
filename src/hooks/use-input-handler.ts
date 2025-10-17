@@ -473,7 +473,7 @@ Respond with ONLY the commit message, no additional text.`;
           if (chunk.type === "content" && chunk.content) {
             accumulatedCommitContent += chunk.content;
             const now = Date.now();
-            if (now - lastCommitUpdateTime >= 150) {
+            if (now - lastCommitUpdateTime >= 100) {
               commitMessage += accumulatedCommitContent;
               if (!streamingEntry) {
                 const newEntry = {
@@ -1307,7 +1307,7 @@ ${incidents.slice(0, 3).map(i => `- ${i.title} (${i.impact} impact)`).join('\n')
 
       const flushUpdates = () => {
         const now = Date.now();
-        if (now - lastUpdateTime < 150) return; // Throttle to ~6-7 FPS
+        if (now - lastUpdateTime < 100) return; // Throttle to ~10 FPS for smoother updates
 
         // Update token count if changed
         if (lastTokenCount !== 0) {

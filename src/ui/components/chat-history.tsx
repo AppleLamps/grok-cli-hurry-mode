@@ -9,10 +9,20 @@ interface ChatHistoryProps {
   isConfirmationActive?: boolean;
 }
 
-// Helper to truncate content in compact mode
-const truncateContent = (content: string, maxLength: number = 100): string => {
-  if (process.env.COMPACT !== '1') return content;
-  return content.length > maxLength ? content.substring(0, maxLength) + '...' : content;
+// Helper to truncate content for better readability
+const truncateContent = (content: string, maxLines: number = 15): string => {
+  const lines = content.split('\n');
+
+  // If content is short enough, return as-is
+  if (lines.length <= maxLines) {
+    return content;
+  }
+
+  // Show first maxLines lines and indicate truncation
+  const truncatedLines = lines.slice(0, maxLines);
+  const remainingLines = lines.length - maxLines;
+
+  return truncatedLines.join('\n') + `\n... (${remainingLines} more lines)`;
 };
 
 // Memoized ChatEntry component to prevent unnecessary re-renders
@@ -30,6 +40,9 @@ const MemoizedChatEntry = React.memo(
 
     const renderFileContent = (content: string) => {
       const lines = content.split("\n");
+      const maxLinesToShow = 10;
+      const totalLines = lines.length;
+      const shouldTruncate = totalLines > maxLinesToShow;
 
       // Calculate minimum indentation like DiffRenderer does
       let baseIndentation = Infinity;
@@ -43,14 +56,25 @@ const MemoizedChatEntry = React.memo(
         baseIndentation = 0;
       }
 
-      return lines.map((line, index) => {
-        const displayContent = line.substring(baseIndentation);
-        return (
-          <Text key={index} color="gray">
-            {displayContent}
-          </Text>
-        );
-      });
+      const linesToDisplay = shouldTruncate ? lines.slice(0, maxLinesToShow) : lines;
+
+      return (
+        <>
+          {linesToDisplay.map((line, index) => {
+            const displayContent = line.substring(baseIndentation);
+            return (
+              <Text key={index} color="gray">
+                {displayContent}
+              </Text>
+            );
+          })}
+          {shouldTruncate && (
+            <Text color="cyan" dimColor>
+              ... ({totalLines - maxLinesToShow} more lines)
+            </Text>
+          )}
+        </>
+      );
     };
 
     switch (entry.type) {
@@ -137,7 +161,7 @@ const MemoizedChatEntry = React.memo(
 
         const filePath = getFilePath(entry.toolCall);
         const isExecuting = entry.type === "tool_call" || !entry.toolResult;
-        
+
         // Format JSON content for better readability
         const formatToolContent = (content: string, toolName: string) => {
           const truncated = truncateContent(content, 200); // Allow longer for tools
@@ -221,9 +245,9 @@ export function ChatHistory({
   // Filter out tool_call entries with "Executing..." when confirmation is active
   const filteredEntries = isConfirmationActive
     ? entries.filter(
-        (entry) =>
-          !(entry.type === "tool_call" && entry.content === "Executing...")
-      )
+      (entry) =>
+        !(entry.type === "tool_call" && entry.content === "Executing...")
+    )
     : entries;
 
   // Compact mode: show fewer entries to reduce rendering overhead
@@ -233,7 +257,7 @@ export function ChatHistory({
     <Box flexDirection="column">
       {filteredEntries.slice(-maxEntries).map((entry, index) => (
         <MemoizedChatEntry
-          key={`${entry.timestamp.getTime()}-${index}`}
+          key={entry.timestamp.getTime()}
           entry={entry}
           index={index}
         />

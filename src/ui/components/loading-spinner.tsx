@@ -8,6 +8,8 @@ interface LoadingSpinnerProps {
   tokenCount: number;
 }
 
+const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 const loadingTexts = [
   "Thinking...",
   "Processing...",
@@ -41,16 +43,34 @@ export function LoadingSpinner({
   processingTime,
   tokenCount,
 }: LoadingSpinnerProps) {
-  if (!isActive) return null;
+  const [frame, setFrame] = useState(0);
+  const [textIndex, setTextIndex] = useState(0);
 
-  // Static snapshot: no animation to reduce render loop activity
-  const staticSpinner = "⠋";
-  const staticText = "Processing...";
+  useEffect(() => {
+    if (!isActive) return;
+
+    // Animate spinner at 12.5 FPS (80ms per frame)
+    const spinnerInterval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+    }, 80);
+
+    // Change loading text every 3 seconds for variety
+    const textInterval = setInterval(() => {
+      setTextIndex((prev) => (prev + 1) % loadingTexts.length);
+    }, 3000);
+
+    return () => {
+      clearInterval(spinnerInterval);
+      clearInterval(textInterval);
+    };
+  }, [isActive]);
+
+  if (!isActive) return null;
 
   return (
     <Box marginTop={1}>
       <Text color="blue">
-        {staticSpinner} {staticText}
+        {spinnerFrames[frame]} {loadingTexts[textIndex]}
       </Text>
       <Text color="gray">
         {" "}({processingTime}s · ↑ {formatTokenCount(tokenCount)} tokens · esc to interrupt)

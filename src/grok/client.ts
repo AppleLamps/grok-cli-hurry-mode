@@ -45,19 +45,39 @@ export interface GrokResponse {
   }>;
 }
 
+export interface GrokClientOptions {
+  timeout?: number;
+  streamTimeout?: number;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export class GrokClient {
   private client: OpenAI;
   private currentModel: string = "grok-code-fast-1";
   private defaultMaxTokens: number;
+  private defaultTemperature: number;
+  private defaultTimeout: number;
+  private defaultStreamTimeout: number;
 
-  constructor(apiKey: string, model?: string, baseURL?: string) {
+  constructor(apiKey: string, model?: string, baseURL?: string, options?: GrokClientOptions) {
+    // Use provided timeout or default to 360000ms (6 minutes)
+    const timeout = options?.timeout || 360000;
+
     this.client = new OpenAI({
       apiKey,
       baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-      timeout: 360000,
+      timeout,
     });
+
+    // Store configuration
+    this.defaultTimeout = timeout;
+    this.defaultStreamTimeout = options?.streamTimeout || 3600000; // 1 hour for reasoning models
+    this.defaultTemperature = options?.temperature || 0.7;
+
     const envMax = Number(process.env.GROK_MAX_TOKENS);
-    this.defaultMaxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 1536;
+    this.defaultMaxTokens = options?.maxTokens || (Number.isFinite(envMax) && envMax > 0 ? envMax : 1536);
+
     if (model) {
       this.currentModel = model;
     }
@@ -75,16 +95,18 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    searchOptions?: SearchOptions,
+    toolChoice?: "auto" | "required" | "none" | { type: "function"; function: { name: string } }
   ): Promise<GrokResponse> {
     try {
       const requestPayload: any = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-        temperature: 0.7,
+        tool_choice: toolChoice || (tools && tools.length > 0 ? "auto" : undefined),
+        temperature: this.defaultTemperature,
         max_tokens: this.defaultMaxTokens,
+        timeout: this.defaultTimeout,
       };
 
       // Add search parameters if specified
@@ -105,17 +127,20 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    searchOptions?: SearchOptions,
+    toolChoice?: "auto" | "required" | "none" | { type: "function"; function: { name: string } }
   ): AsyncGenerator<any, void, unknown> {
     try {
       const requestPayload: any = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-        temperature: 0.7,
+        tool_choice: toolChoice || (tools && tools.length > 0 ? "auto" : undefined),
+        temperature: this.defaultTemperature,
         max_tokens: this.defaultMaxTokens,
         stream: true,
+        // Use extended timeout for streaming (especially for reasoning models)
+        timeout: this.defaultStreamTimeout,
       };
 
       // Add search parameters if specified

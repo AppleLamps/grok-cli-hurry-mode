@@ -11,6 +11,12 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  timeout?: number; // API timeout in milliseconds (default: 360000 for 6 minutes)
+  streamTimeout?: number; // Streaming timeout override for reasoning models (default: 3600000 for 1 hour)
+  temperature?: number; // Model temperature (default: 0.7)
+  maxTokens?: number; // Max tokens per request (default: 1536)
+  parallelToolCalls?: boolean; // Enable parallel tool execution (default: true)
+  maxConcurrentTools?: number; // Max concurrent tool calls (default: 3)
 }
 
 /**
@@ -20,6 +26,12 @@ export interface UserSettings {
 export interface ProjectSettings {
   model?: string; // Current model for this project
   mcpServers?: Record<string, any>; // MCP server configurations
+  timeout?: number; // Project-specific timeout override
+  streamTimeout?: number; // Project-specific streaming timeout override
+  temperature?: number; // Project-specific temperature override
+  maxTokens?: number; // Project-specific max tokens override
+  parallelToolCalls?: boolean; // Project-specific parallel tool execution override
+  maxConcurrentTools?: number; // Project-specific max concurrent tools override
 }
 
 /**
@@ -35,6 +47,12 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
     "grok-3-fast",
     "grok-3-mini-fast",
   ],
+  timeout: 360000, // 6 minutes for standard requests
+  streamTimeout: 3600000, // 1 hour for reasoning models (as per xAI docs)
+  temperature: 0.7,
+  maxTokens: 1536,
+  parallelToolCalls: true, // Enable parallel tool execution by default
+  maxConcurrentTools: 3, // Default batch size for parallel execution
 };
 
 /**
@@ -128,7 +146,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.userSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn("Corrupted user settings file, using defaults");
         }
@@ -208,7 +226,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn("Corrupted project settings file, using defaults");
         }
@@ -314,6 +332,111 @@ export class SettingsManager {
     return (
       userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1"
     );
+  }
+
+  /**
+   * Get timeout from settings or environment
+   * Priority: project setting > user setting > environment > default
+   */
+  public getTimeout(): number {
+    const envTimeout = Number(process.env.GROK_TIMEOUT);
+    if (Number.isFinite(envTimeout) && envTimeout > 0) {
+      return envTimeout;
+    }
+
+    const projectTimeout = this.getProjectSetting("timeout");
+    if (projectTimeout) {
+      return projectTimeout;
+    }
+
+    const userTimeout = this.getUserSetting("timeout");
+    return userTimeout || DEFAULT_USER_SETTINGS.timeout || 360000;
+  }
+
+  /**
+   * Get streaming timeout from settings or environment
+   * Priority: project setting > user setting > environment > default
+   * xAI recommends 3600000ms (1 hour) for reasoning models
+   */
+  public getStreamTimeout(): number {
+    const envStreamTimeout = Number(process.env.GROK_STREAM_TIMEOUT);
+    if (Number.isFinite(envStreamTimeout) && envStreamTimeout > 0) {
+      return envStreamTimeout;
+    }
+
+    const projectStreamTimeout = this.getProjectSetting("streamTimeout");
+    if (projectStreamTimeout) {
+      return projectStreamTimeout;
+    }
+
+    const userStreamTimeout = this.getUserSetting("streamTimeout");
+    return userStreamTimeout || DEFAULT_USER_SETTINGS.streamTimeout || 3600000;
+  }
+
+  /**
+   * Get temperature from settings or environment
+   * Priority: project setting > user setting > environment > default
+   */
+  public getTemperature(): number {
+    const envTemperature = Number(process.env.GROK_TEMPERATURE);
+    if (Number.isFinite(envTemperature) && envTemperature >= 0) {
+      return envTemperature;
+    }
+
+    const projectTemperature = this.getProjectSetting("temperature");
+    if (projectTemperature !== undefined) {
+      return projectTemperature;
+    }
+
+    const userTemperature = this.getUserSetting("temperature");
+    return userTemperature !== undefined ? userTemperature : (DEFAULT_USER_SETTINGS.temperature || 0.7);
+  }
+
+  /**
+   * Get max tokens from settings or environment
+   * Priority: project setting > user setting > environment > default
+   */
+  public getMaxTokens(): number {
+    const envMaxTokens = Number(process.env.GROK_MAX_TOKENS);
+    if (Number.isFinite(envMaxTokens) && envMaxTokens > 0) {
+      return envMaxTokens;
+    }
+
+    const projectMaxTokens = this.getProjectSetting("maxTokens");
+    if (projectMaxTokens) {
+      return projectMaxTokens;
+    }
+
+    const userMaxTokens = this.getUserSetting("maxTokens");
+    return userMaxTokens || DEFAULT_USER_SETTINGS.maxTokens || 1536;
+  }
+
+  /**
+   * Get parallel tool calls setting
+   * Priority: project setting > user setting > default
+   */
+  public getParallelToolCalls(): boolean {
+    const projectParallel = this.getProjectSetting("parallelToolCalls");
+    if (projectParallel !== undefined) {
+      return projectParallel;
+    }
+
+    const userParallel = this.getUserSetting("parallelToolCalls");
+    return userParallel !== undefined ? userParallel : (DEFAULT_USER_SETTINGS.parallelToolCalls || true);
+  }
+
+  /**
+   * Get max concurrent tools setting
+   * Priority: project setting > user setting > default
+   */
+  public getMaxConcurrentTools(): number {
+    const projectMax = this.getProjectSetting("maxConcurrentTools");
+    if (projectMax) {
+      return projectMax;
+    }
+
+    const userMax = this.getUserSetting("maxConcurrentTools");
+    return userMax || DEFAULT_USER_SETTINGS.maxConcurrentTools || 3;
   }
 }
 

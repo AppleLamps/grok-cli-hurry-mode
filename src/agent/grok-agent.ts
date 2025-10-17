@@ -118,7 +118,22 @@ export class GrokAgent extends EventEmitter {
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
     this.sessionLogPath = process.env.GROK_SESSION_LOG || `${process.env.HOME}/.grok/session.log`;
-    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
+
+    // Get settings from manager
+    const clientOptions = {
+      timeout: manager.getTimeout(),
+      streamTimeout: manager.getStreamTimeout(),
+      temperature: manager.getTemperature(),
+      maxTokens: manager.getMaxTokens(),
+    };
+
+    // Initialize client with settings
+    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL, clientOptions);
+
+    // Get parallel execution settings
+    const parallelEnabled = manager.getParallelToolCalls();
+    this.maxConcurrentToolCalls = parallelEnabled ? manager.getMaxConcurrentTools() : 1;
+
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();

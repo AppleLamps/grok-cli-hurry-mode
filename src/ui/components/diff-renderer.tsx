@@ -6,7 +6,6 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { Colors } from '../utils/colors.js';
 import crypto from 'crypto';
-import { colorizeCode } from '../utils/code-colorizer.js';
 import { MaxSizedBox } from '../shared/max-sized-box.js';
 
 interface DiffLine {
@@ -110,11 +109,11 @@ export const DiffRenderer = ({
   const lines = diffContent.split('\n');
   const firstLine = lines[0];
   let actualDiffContent = diffContent;
-  
+
   if (firstLine && (firstLine.startsWith('Updated ') || firstLine.startsWith('Created '))) {
     actualDiffContent = lines.slice(1).join('\n');
   }
-  
+
   const parsedLines = parseDiffWithLineNumbers(actualDiffContent);
 
   if (parsedLines.length === 0) {
@@ -155,6 +154,13 @@ const renderDiffContent = (
     return <Text dimColor>No changes detected.</Text>;
   }
 
+  // Limit diff display to ~20 lines for readability
+  const maxDiffLines = 20;
+  const shouldTruncateDiff = displayableLines.length > maxDiffLines;
+  const linesToDisplay = shouldTruncateDiff
+    ? displayableLines.slice(0, maxDiffLines)
+    : displayableLines;
+
   // Calculate the minimum indentation across all displayable lines
   let baseIndentation = Infinity; // Start high to find the minimum
   for (const line of displayableLines) {
@@ -183,7 +189,7 @@ const renderDiffContent = (
       maxWidth={terminalWidth}
       key={key}
     >
-      {displayableLines.reduce<React.ReactNode[]>((acc, line, index) => {
+      {linesToDisplay.reduce<React.ReactNode[]>((acc, line, index) => {
         // Determine the relevant line number for gap calculation based on type
         let relevantLineNumberForGapCalc: number | null = null;
         if (line.type === 'add' || line.type === 'context') {
@@ -197,7 +203,7 @@ const renderDiffContent = (
           lastLineNumber !== null &&
           relevantLineNumberForGapCalc !== null &&
           relevantLineNumberForGapCalc >
-            lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
+          lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
         ) {
           acc.push(
             <Box key={`gap-${index}`}>
@@ -253,28 +259,13 @@ const renderDiffContent = (
         );
         return acc;
       }, [])}
+      {shouldTruncateDiff && (
+        <Box marginTop={1}>
+          <Text color="cyan" dimColor>
+            ... ({displayableLines.length - maxDiffLines} more lines not shown)
+          </Text>
+        </Box>
+      )}
     </MaxSizedBox>
   );
-};
-
-
-const getLanguageFromExtension = (extension: string): string | null => {
-  const languageMap: { [key: string]: string } = {
-    js: 'javascript',
-    ts: 'typescript',
-    py: 'python',
-    json: 'json',
-    css: 'css',
-    html: 'html',
-    sh: 'bash',
-    md: 'markdown',
-    yaml: 'yaml',
-    yml: 'yaml',
-    txt: 'plaintext',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    rb: 'ruby',
-  };
-  return languageMap[extension] || null; // Return null if extension not found
 };

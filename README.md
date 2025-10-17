@@ -341,9 +341,25 @@ This file stores **global settings** that apply across all projects. These setti
     "grok-3-latest",
     "grok-3-fast",
     "grok-3-mini-fast"
-  ]
+  ],
+  "timeout": 360000,
+  "streamTimeout": 3600000,
+  "temperature": 0.7,
+  "maxTokens": 1536,
+  "parallelToolCalls": true,
+  "maxConcurrentTools": 3
 }
 ```
+
+**Advanced Settings** (optional):
+- `timeout`: API timeout in milliseconds (default: 360000 = 6 minutes)
+- `streamTimeout`: Streaming timeout for reasoning models (default: 3600000 = 1 hour)
+- `temperature`: Model creativity 0.0-2.0 (default: 0.7)
+- `maxTokens`: Maximum response length (default: 1536)
+- `parallelToolCalls`: Enable parallel tool execution (default: true)
+- `maxConcurrentTools`: Max concurrent tools (default: 3)
+
+See [xAI Configuration Guide](.agent/XAI_CONFIGURATION_GUIDE.md) for detailed tuning options.
 
 ### Project-Level Settings (`.grok/settings.json`)
 
@@ -351,11 +367,17 @@ This file stores **project-specific settings** in your current working directory
 
 - **Current Model**: The model currently in use for this project
 - **MCP Servers**: Model Context Protocol server configurations
+- **Performance Overrides**: Project-specific timeout, temperature, and concurrency settings
 
 **Example:**
 ```json
 {
-  "model": "grok-3-fast",
+  "model": "grok-4-latest",
+  "streamTimeout": 7200000,
+  "temperature": 0.3,
+  "maxTokens": 4096,
+  "parallelToolCalls": true,
+  "maxConcurrentTools": 5,
   "mcpServers": {
     "linear": {
       "name": "linear",
@@ -366,6 +388,11 @@ This file stores **project-specific settings** in your current working directory
   }
 }
 ```
+
+**Project-specific overrides** allow you to optimize settings per project:
+- Use higher `streamTimeout` for complex refactoring projects
+- Lower `temperature` for deterministic code generation
+- Increase `maxConcurrentTools` for large-scale operations
 
 ### How It Works
 

@@ -1,12 +1,13 @@
-## 1.0.49 – Task Planning Framework Release
+## 1.0.50 – Autonomous Agent Upgrade
 
-This release introduces intelligent task orchestration with automatic planning and execution.
-- **🎯 Task Planning Framework**: Multi-step task decomposition with automatic execution
-- **🛡️ Risk Assessment**: Identifies high-risk operations with user confirmation
-- **🔄 Safe Rollback**: Automatic rollback on failure with file snapshots
-- **📊 Progress Tracking**: Real-time progress updates during plan execution
-- **✅ Comprehensive Testing**: 19 integration tests ensuring reliability
-- **🧪 Vitest Integration**: Modern testing framework with watch mode and UI
+This release transforms Grok CLI from a tool-using assistant into a true autonomous agent.
+- **🧠 Enhanced Task Planning**: Context-aware planning using CodeIntelligenceEngine with symbol search
+- **🔄 Self-Correcting Execution**: Automatic fallback strategies with exponential backoff retry (max 3 attempts)
+- **🎯 Intelligent File Discovery**: Finds relevant files using symbol search and pattern matching
+- **⚡ Concrete Tool Calls**: Generates specific, executable operations with actual file paths
+- **🛡️ Graceful Degradation**: 6 fallback strategies across 4 strategy types for resilient execution
+- **📊 Endpoint-Specific Planning**: Special logic for API endpoint creation tasks
+- **✅ All Tests Passing**: 19 integration tests ensuring reliability
 
 
 # Grok CLI
@@ -61,15 +62,58 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 
 ## 🆕 What's New in v1.0+
 
-### 🎯 **Task Planning Framework** (Latest - v1.0.49+)
-- **🧠 Intelligent Task Orchestration**: Automatically breaks down complex tasks into executable steps
-- **⚡ Automatic Execution**: Create and execute multi-step plans with a single command
-- **🛡️ Risk Assessment**: Identifies high-risk operations and requests user confirmation
-- **🔄 Safe Rollback**: Automatic rollback on failure with file snapshots
-- **📊 Progress Tracking**: Real-time progress events during plan execution
-- **✅ Comprehensive Testing**: 19 integration tests ensuring reliability
+### 🤖 **Autonomous Agent Upgrade** (Latest - v1.0.50+)
 
-**Example**: Ask "Refactor authentication module to use dependency injection" and watch Grok automatically plan, validate, and execute the entire refactoring with safety checks!
+Grok CLI is now a **true autonomous agent** with context-aware planning and self-correcting execution!
+
+#### **Part 1: Enhanced Task Planning Framework**
+- **🧠 Context-Aware Planning**: Integrates CodeIntelligenceEngine to analyze your actual codebase structure
+- **🔍 Intelligent File Discovery**: Uses symbol search to automatically find relevant routes, controllers, services
+- **🎯 Endpoint-Specific Logic**: Special handling for API endpoint creation (e.g., "Add /users/:id endpoint")
+- **⚡ Concrete Tool Calls**: Generates specific operations with actual file paths, not generic placeholders
+- **📊 Dependency Analysis**: Automatically detects and includes dependent files in plans
+- **🔎 Keyword Extraction**: Parses user requests to find relevant symbols and files
+
+#### **Part 2: Self-Correcting Execution Loop**
+- **🔄 Automatic Fallback**: 6 fallback strategies for graceful degradation when tools fail
+- **⏱️ Exponential Backoff**: Retry failed operations with 1s, 2s, 4s delays (max 3 attempts)
+- **🛡️ 4 Strategy Types**:
+  - `decompose_and_retry`: Break complex operations into smaller steps
+  - `sequential_execution`: Execute batch operations one at a time
+  - `simpler_tool`: Use lower-level alternative tools
+  - `bash_fallback`: Fall back to shell commands
+- **📈 Retry Tracking**: Intelligent tracking prevents infinite retry loops
+- **🔍 Comprehensive Logging**: Full transparency into self-correction attempts
+
+#### **Fallback Strategy Examples**
+```
+refactoring_assistant fails
+  ↓ Fallback to multi_file_edit
+    ↓ Fallback to sequential str_replace_editor calls
+      ↓ Success! ✅
+
+symbol_search fails
+  ↓ Fallback to text search
+    ↓ Fallback to bash grep
+      ↓ Success! ✅
+```
+
+#### **Real-World Example**
+```bash
+# User: "Add a new GET /users/:id endpoint"
+
+# 🧠 Agent analyzes codebase with CodeIntelligenceEngine
+# 🔍 Finds: routes/users.ts, controllers/userController.ts, services/userService.ts
+# 📝 Generates concrete plan:
+#   Step 1: Edit routes/users.ts - Add router.get('/users/:id', userController.getUserById)
+#   Step 2: Edit controllers/userController.ts - Add getUserById function
+#   Step 3: Edit services/userService.ts - Add findUserById method
+#   Step 4: Update imports in all files
+# ⚡ Executes plan with automatic rollback on failure
+# ✅ Complete! All files updated successfully
+```
+
+**Result**: Grok CLI now handles complex, multi-step tasks with the intelligence and resilience of a senior developer!
 
 ### 🧠 **P2: Code Intelligence Tools**
 - **🔍 AST Parser**: Language-specific syntax tree analysis for TypeScript, JavaScript, Python
@@ -96,8 +140,10 @@ A conversational AI CLI tool powered by Grok with **Claude Code-level intelligen
 
 ## ✨ Features
 
-### 🎯 **Intelligent Task Planning & Orchestration**
-- **🧠 Multi-Step Task Planning**: Automatically decomposes complex tasks into executable steps with dependency ordering
+### 🤖 **Autonomous Agent Capabilities**
+- **🧠 Context-Aware Planning**: Uses CodeIntelligenceEngine to analyze codebase and generate concrete plans
+- **🔄 Self-Correcting Execution**: Automatic fallback strategies with retry mechanism for resilient operation
+- **🎯 Multi-Step Task Planning**: Automatically decomposes complex tasks into executable steps with dependency ordering
 - **⚡ Automatic Execution**: Create, validate, and execute plans with a single command
 - **🛡️ Risk Assessment**: Evaluates operation risks (low/medium/high/critical) before execution
 - **✅ User Confirmation**: Prompts for approval on high-risk operations with detailed plan previews

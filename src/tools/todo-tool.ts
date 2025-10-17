@@ -1,6 +1,6 @@
 import { ToolResult } from '../types/index.js';
 
-interface TodoItem {
+export interface TodoItem {
   id: string;
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -49,7 +49,7 @@ export class TodoTool {
       const statusColor = getStatusColor(todo.status);
       const strikethrough = todo.status === 'completed' ? '\x1b[9m' : '';
       const indent = index === 0 ? '' : '  ';
-      
+
       output += `${indent}${statusColor}${strikethrough}${checkbox} ${todo.content}${reset}\n`;
     });
 
@@ -83,10 +83,11 @@ export class TodoTool {
       }
 
       this.todos = todos;
-      
+
       return {
         success: true,
-        output: this.formatTodoList()
+        output: `Created todo list with ${todos.length} item${todos.length === 1 ? '' : 's'}`,
+        data: this.todos
       };
     } catch (error) {
       return {
@@ -102,7 +103,7 @@ export class TodoTool {
 
       for (const update of updates) {
         const todoIndex = this.todos.findIndex(t => t.id === update.id);
-        
+
         if (todoIndex === -1) {
           return {
             success: false,
@@ -135,7 +136,8 @@ export class TodoTool {
 
       return {
         success: true,
-        output: this.formatTodoList()
+        output: `Updated ${updatedIds.length} todo item${updatedIds.length === 1 ? '' : 's'}`,
+        data: this.todos
       };
     } catch (error) {
       return {
@@ -148,7 +150,10 @@ export class TodoTool {
   async viewTodoList(): Promise<ToolResult> {
     return {
       success: true,
-      output: this.formatTodoList()
+      output: this.todos.length === 0
+        ? 'No todos created yet'
+        : `Viewing ${this.todos.length} todo item${this.todos.length === 1 ? '' : 's'}`,
+      data: this.todos
     };
   }
 }

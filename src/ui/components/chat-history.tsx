@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { ChatEntry } from "../../agent/grok-agent.js";
 import { DiffRenderer } from "./diff-renderer.js";
 import { MarkdownRenderer } from "../utils/markdown-renderer.js";
+import { TodoList, TodoItem } from "./todo-list.js";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
@@ -136,6 +137,8 @@ const MemoizedChatEntry = React.memo(
               return "Created Todo";
             case "update_todo_list":
               return "Updated Todo";
+            case "view_todo_list":
+              return "View Todo";
             default:
               return "Tool";
           }
@@ -196,6 +199,13 @@ const MemoizedChatEntry = React.memo(
           entry.toolResult?.success &&
           !shouldShowDiff;
 
+        const isTodoTool =
+          (entry.toolCall?.function?.name === "create_todo_list" ||
+            entry.toolCall?.function?.name === "update_todo_list" ||
+            entry.toolCall?.function?.name === "view_todo_list") &&
+          entry.toolResult?.success &&
+          entry.toolResult?.data;
+
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
             <Box>
@@ -208,6 +218,13 @@ const MemoizedChatEntry = React.memo(
             <Box marginLeft={2} flexDirection="column">
               {isExecuting ? (
                 <Text color="cyan">⎿ Executing...</Text>
+              ) : isTodoTool ? (
+                <Box flexDirection="column">
+                  <Text color="gray">⎿ {entry.content}</Text>
+                  <Box marginLeft={2} flexDirection="column">
+                    <TodoList todos={entry.toolResult?.data as TodoItem[]} />
+                  </Box>
+                </Box>
               ) : shouldShowFileContent ? (
                 <Box flexDirection="column">
                   <Text color="gray">⎿ File contents:</Text>
